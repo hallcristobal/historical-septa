@@ -1,7 +1,7 @@
 use std::{fmt::Display, sync::Arc};
 
 use chrono::{DateTime, TimeZone, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::{PgPool, prelude::FromRow};
 use uuid::Uuid;
 
