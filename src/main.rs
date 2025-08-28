@@ -3,7 +3,9 @@ use actix_web::{
     web::{self, Json},
 };
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use sqlx::PgPool;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{
     RwLock,
@@ -12,13 +14,12 @@ use tokio::sync::{
 use tracking::Tracking;
 
 use crate::{
-    septa::{
-        FetchResult,
-        train_view::{Content, TrainView},
-    },
-    tracking::Changed,
+    db::QueryOrdering,
+    septa::train_view::{Content, TrainView},
+    tracking::{Changed, Fetch},
 };
 
+mod db;
 mod septa;
 mod serde_utils;
 mod testing;
@@ -26,53 +27,135 @@ mod tracking;
 
 struct AppState {
     train_statuses: HashMap<String, Tracking<TrainView>>,
+    pg_pool: PgPool,
 }
 type SharedAppState = Arc<RwLock<AppState>>;
 
-async fn accept_new_file(state: SharedAppState, mut recv: Receiver<FetchResult<Content>>) {
-    while let Some((timestamp, content)) = recv.recv().await {
-        let len = content.0.len();
+async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>) {
+    while let Some(mut content) = recv.recv().await {
+        let incomming_len = content.trains.len();
+        {
+            let statuses = &state.read().await.train_statuses;
+            content.trains.retain(|tv| {
+                if let Some(existing) = statuses.get(&tv.trainno) {
+                    if let Some(ref mri) = existing.most_recent_item {
+                        if **mri != *tv {
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+
+        if content.trains.len() == 0 {
+            // TODO: Should i drop the file if there's no "changed" trains, should i keep it but
+            // just not keep a record?
+            println!("File is not changed.");
+            let _ = Fetch::new(content.timestamp, "UNCHANGED".to_string(), None)
+                .store_fetch(state.read().await.pg_pool.clone())
+                .await;
+            continue;
+        }
+        println!(
+            "There are {} trains changed of the {}.",
+            content.trains.len(),
+            incomming_len
+        );
+
+        let file_id = uuid::Uuid::new_v4();
+        {
+            let state = state.clone();
+            let content = content.clone();
+            let file_id = file_id.clone();
+            tokio::spawn(async move {
+                let _ = content
+                    .commit_file(file_id, state.read().await.pg_pool.clone())
+                    .await;
+            });
+        }
+        let len = content.trains.len();
+        content
+            .trains
+            .iter_mut()
+            .for_each(|tv| tv.file_id = file_id);
+
         let updated = process_train_views(
-            content.0,
-            &timestamp,
+            content.trains,
+            &content.timestamp,
             &mut state.write().await.train_statuses,
         );
+        let result = json!({
+            "updated": updated,
+            "incomming": incomming_len,
+        })
+        .to_string();
+        let _ = Fetch::new(content.timestamp, "OK".to_string(), Some(result))
+            .store_fetch(state.read().await.pg_pool.clone())
+            .await;
         println!("Processed {len} updates. Wrote {updated}.");
     }
 }
 
-async fn poll_for_train_view(
-    _state: SharedAppState,
-    interval: u64,
-    sender: Sender<FetchResult<Content>>,
-) {
+async fn poll_for_train_view(state: SharedAppState, interval: u64, sender: Sender<Content>) {
     let sleep_duration = Duration::from_secs(interval);
-    while let Ok(content) = septa::api::fetch_train_view().await {
-        match sender.send(content).await {
+    loop {
+        match septa::api::fetch_train_view().await {
+            Ok(content) => match sender.send(content).await {
+                Err(e) => {
+                    eprintln!("Sender failed: {e:?}");
+                    break;
+                }
+                _ => {}
+            },
             Err(e) => {
-                eprintln!("Sender failed: {e:?}");
-                break;
+                let _ = Fetch::new(e.0, "FETCH_ERROR".to_string(), Some(e.1))
+                    .store_fetch(state.read().await.pg_pool.clone())
+                    .await;
             }
-            _ => {}
         }
         tokio::time::sleep(sleep_duration).await;
     }
 }
 
+async fn populate_known_statuses(state: SharedAppState) -> anyhow::Result<usize> {
+    let train_views = TrainView::get_most_recent_all(state.read().await.pg_pool.clone()).await?;
+    let train_statuses = &mut state.write().await.train_statuses;
+    train_views.iter().for_each(|train_view| {
+        train_statuses.insert(
+            train_view.trainno.to_owned(),
+            Tracking {
+                most_recent_item: Some(Arc::new(train_view.clone())),
+                most_recent_timestamp: train_view.timestamp,
+                latest_changes: None,
+            },
+        );
+    });
+    Ok(train_views.len())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().unwrap();
     let state = AppState {
         train_statuses: HashMap::new(),
+        pg_pool: db::init().await.unwrap(),
     };
     let state = Arc::new(RwLock::new(state));
+    let backfilled = populate_known_statuses(state.clone()).await?;
+    println!("Backfilled {} statuses during startup.", backfilled);
     let state_handle = state.clone();
     let (file_sender, file_receiver) = tokio::sync::mpsc::channel(1);
-    let poll_handle = tokio::spawn(async move {
+    let _poll_handle = tokio::spawn(async move {
         let _ = poll_for_train_view(state_handle, 5, file_sender).await;
     });
 
     let state_handle = state.clone();
-    let processer_handle = tokio::spawn(async move {
+    let _processer_handle = tokio::spawn(async move {
         let _ = accept_new_file(state_handle, file_receiver).await;
     });
 
@@ -85,8 +168,6 @@ async fn main() -> anyhow::Result<()> {
     .unwrap()
     .run()
     .await;
-    let _ = poll_handle.await;
-    let _ = processer_handle.await;
     Ok(())
 }
 
@@ -127,7 +208,7 @@ async fn most_recent_changes(data: web::Data<SharedAppState>) -> impl Responder 
             Some(ref changes) => {
                 let relevant_changes: Vec<Changed> = changes
                     .iter()
-                    .filter(|c| c.timestamp >= until)
+                    .filter(|c| c.changed_at >= until)
                     .map(|c| c.clone())
                     .collect();
                 if relevant_changes.len() > 0 {
@@ -149,8 +230,51 @@ fn routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api")
             .route("/most_recent", web::get().to(most_recent_trains))
+            .route("/train/{id}", web::get().to(get_train))
             .route("/recent_changes", web::get().to(most_recent_changes)),
     );
+}
+
+#[derive(Deserialize)]
+struct GetTrainPath {
+    id: String,
+}
+#[derive(Deserialize)]
+struct GetTrainQuery {
+    limit: Option<i64>,
+    before: Option<i64>,
+    after: Option<i64>,
+    order: Option<QueryOrdering>,
+}
+async fn get_train(
+    path: web::Path<GetTrainPath>,
+    query: web::Query<GetTrainQuery>,
+    data: web::Data<SharedAppState>,
+) -> impl Responder {
+    #[derive(Serialize)]
+    struct Response {
+        records: Vec<TrainView>,
+    }
+    let pg_pool = data.read().await.pg_pool.clone();
+
+    match TrainView::fetch_for_train(
+        pg_pool,
+        &path.id,
+        query.limit,
+        query.before.and_then(|ts| DateTime::from_timestamp(ts, 0)),
+        query.after.and_then(|ts| DateTime::from_timestamp(ts, 0)),
+        query.order,
+    )
+    .await
+    {
+        Ok(records) => Json(Response { records }),
+        Err(e) => {
+            eprintln!("Error fetching: {e}");
+            Json(Response {
+                records: Vec::new(),
+            })
+        }
+    }
 }
 
 fn process_train_views(
@@ -168,15 +292,14 @@ fn process_train_views(
         let train_view = Arc::new(train_view);
         if *timestamp > views.most_recent_timestamp {
             if let Some(ref most_recent) = views.most_recent_item {
-                if let Some(changes) = train_view.has_changed(&most_recent) {
-                    views.latest_changes = Some(changes);
-                    updated += 1;
-                }
+                let changes = train_view.get_changes(&most_recent);
+                views.latest_changes = changes;
+                updated += 1;
             }
             views.most_recent_timestamp = *timestamp;
             views.most_recent_item = Some(train_view.clone());
         }
-        views.items.push(train_view);
+        // views.items.push(train_view);
     });
     updated
 }
@@ -194,14 +317,14 @@ fn process_train_view(
     let train_view = Arc::new(train_view);
     if *timestamp > views.most_recent_timestamp {
         if let Some(ref most_recent) = views.most_recent_item {
-            if let Some(changes) = train_view.has_changed(&most_recent) {
+            if let Some(changes) = train_view.get_changes(&most_recent) {
                 views.latest_changes = Some(changes);
             }
         }
         views.most_recent_timestamp = *timestamp;
         views.most_recent_item = Some(train_view.clone());
     }
-    views.items.push(train_view);
+    // views.items.push(train_view);
 }
 
 fn log_current_cared_statuses(statuses: &HashMap<String, Tracking<TrainView>>) {

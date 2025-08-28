@@ -3,14 +3,24 @@ name = "septa"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = ["migrator"]
+
+[workspace.dependencies]
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "postgres", "chrono", "uuid"] }
+tokio = { version = "1.47.1", features = ["full"] }
+anyhow = "1.0.99"
+dotenvy = "0.15.7"
+
 [dependencies]
 actix = "0.13.5"
 actix-web = "4.11.0"
-anyhow = "1.0.99"
 chrono = "0.4.41"
-dotenvy = "0.15.7"
+anyhow = { workspace = true }
+dotenvy = { workspace = true }
 reqwest = { version = "0.12.23", features = ["json"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["raw_value"] }
-sqlx = { version = "0.8.6", features = ["runtime-tokio", "postgres", "chrono"] }
-tokio = { version = "1.47.1", features = ["full"] }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+uuid = { version = "1.18.0", features = ["v4", "serde"] }

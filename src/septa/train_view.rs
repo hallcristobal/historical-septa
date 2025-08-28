@@ -1,10 +1,19 @@
-use chrono::Utc;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::{Database, PgPool, QueryBuilder, Row, query_builder};
+use uuid::Uuid;
 
-use crate::tracking::{Changed, Value};
+use crate::{
+    db::QueryOrdering,
+    tracking::{Changed, Value},
+};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq)]
 pub struct TrainView {
+    #[serde(skip_deserializing, default = "Uuid::new_v4")]
+    pub id: Uuid,
+    #[serde(skip_deserializing, default)]
+    pub file_id: Uuid,
     #[serde(
         skip_deserializing,
         default,
@@ -33,37 +42,64 @@ pub struct TrainView {
     // pub track_change: String,
 }
 
+impl PartialEq for TrainView {
+    fn eq(&self, other: &Self) -> bool {
+        self.trainno == other.trainno
+            && self.service == other.service
+            && self.dest == other.dest
+            && self.currentstop == other.currentstop
+            && self.nextstop == other.nextstop
+            && self.line == other.line
+            && self.consist == other.consist
+            && self.late == other.late
+            && self.source == other.source
+    }
+}
+
+macro_rules! evaluate_changes {
+    ($si:ident, $self:ident, $prev:ident, $type:ident, $store:ident) => {
+        if $self.$si != $prev.$si {
+            let new_value = Value::$type($self.$si.clone());
+            $store.push(Changed {
+                id: Uuid::new_v4(),
+                trainno: $self.trainno.clone(),
+                record_id: $self.id,
+                changed_at: $self.timestamp,
+                field: String::from(stringify!($si)),
+                old_value: Value::$type($prev.$si.clone()),
+                new_value: new_value.clone(),
+                _type: new_value.string_name(),
+            });
+        }
+    };
+    ([$(($si:ident, $type:ident)),*], $self:ident, $prev:ident, $store:ident) => {
+        $( evaluate_changes!($si, $self, $prev, $type, $store); )*
+    };
+}
+
 impl TrainView {
-    pub fn has_changed(&self, prev: &TrainView) -> Option<Vec<Changed>> {
+    pub fn get_changes(&self, prev: &TrainView) -> Option<Vec<Changed>> {
         let mut changed = vec![];
         if self.trainno != prev.trainno {
             return None;
         }
 
-        if self.service != prev.service {
-            changed.push(Changed {
-                timestamp: self.timestamp,
-                key: String::from("service"),
-                old_value: Value::String(prev.service.to_owned()),
-                new_value: Value::String(self.service.to_owned()),
-            });
-        }
-        if self.late != prev.late {
-            changed.push(Changed {
-                timestamp: self.timestamp,
-                key: String::from("late"),
-                old_value: Value::Int(prev.late),
-                new_value: Value::Int(self.late),
-            });
-        }
-        // if self.track != prev.track {
-        //     changed.push(Changed {
-        //         timestamp: self.timestamp,
-        //         key: String::from("track"),
-        //         old_value: Value::String(prev.track.to_owned()),
-        //         new_value: Value::String(self.track.to_owned()),
-        //     });
-        // }
+        evaluate_changes!(
+            [
+                (service, String),
+                (late, Int),
+                (trainno, String),
+                (dest, String),
+                (currentstop, String),
+                (nextstop, String),
+                (line, String),
+                (consist, String),
+                (source, String)
+            ],
+            self,
+            prev,
+            changed
+        );
 
         if changed.len() > 0 {
             Some(changed)
@@ -71,8 +107,216 @@ impl TrainView {
             None
         }
     }
+
+    /// Database
+    pub async fn get_most_recent_all(pool: PgPool) -> anyhow::Result<Vec<TrainView>> {
+        let records = sqlx::query!(
+            r"
+select 
+    distinct on (trainno) 
+  records.id,
+  file_id,
+  trainno,
+  service,
+  dest,
+  currentstop,
+  nextstop,
+  line,
+  consist,
+  late,
+  source,
+  files.received_at
+from 
+     records 
+join 
+    files on records.file_id = files.id 
+order by 
+    trainno, 
+    received_at desc
+"
+        )
+        .fetch_all(&pool)
+        .await?
+        .iter()
+        .map(|row| TrainView {
+            id: row.id,
+            file_id: row.file_id,
+            timestamp: row.received_at.and_utc(),
+            trainno: row.trainno.clone(),
+            service: row.service.clone(),
+            dest: row.dest.clone(),
+            currentstop: row.currentstop.clone(),
+            nextstop: row.nextstop.clone(),
+            line: row.line.clone(),
+            consist: row.consist.clone(),
+            late: row.late.clone(),
+            source: row.source.clone(),
+        })
+        .collect();
+        Ok(records)
+    }
+    pub async fn fetch_for_train(
+        pool: PgPool,
+        trainno: &str,
+        limit: Option<i64>,
+        before: Option<DateTime<Utc>>,
+        after: Option<DateTime<Utc>>,
+        order: Option<QueryOrdering>,
+    ) -> anyhow::Result<Vec<TrainView>> {
+        let mut builder = query_builder::QueryBuilder::new(
+            r#"select
+  records.id,
+  file_id,
+  trainno,
+  service,
+  dest,
+  currentstop,
+  nextstop,
+  line,
+  consist,
+  late,
+  source,
+  files.received_at
+from
+    records
+join 
+    files on records.file_id = files.id
+"#,
+        );
+        fn where_helper<'args, T, DB: Database>(
+            field: &str,
+            comparator: &str,
+            val: T,
+            builder: &mut sqlx::QueryBuilder<'args, DB>,
+        ) where
+            T: 'args + sqlx::Encode<'args, DB> + sqlx::Type<DB>,
+        {
+            builder.push(format!(" and {} {} ", field, comparator));
+            builder.push_bind(val);
+        }
+
+        builder.push(" WHERE trainno = ");
+        builder.push_bind(trainno);
+
+        if let Some(before) = before {
+            where_helper("received_at", "<", before, &mut builder);
+        }
+        if let Some(after) = after {
+            where_helper("received_at", ">", after, &mut builder);
+        }
+
+        if let Some(order) = order {
+            // TODO: This is unsafe, but it's the best way to do it since it's an enum, and we
+            // alredy throw an error if it's the incorrect of the two options anywa...
+            builder.push(format!(" ORDER BY received_at {}", order));
+        }
+        if let Some(limit) = limit {
+            builder.push(" LIMIT ");
+            builder.push_bind(limit);
+        }
+
+        let results = builder.build();
+        let results = results.fetch_all(&pool).await?;
+
+        let records: Vec<TrainView> = results
+            .iter()
+            .map(|row| TrainView {
+                id: row.get("id"),
+                file_id: row.get("file_id"),
+                timestamp: row.get::<NaiveDateTime, &str>("received_at").and_utc(),
+                trainno: row.get("trainno"),
+                service: row.get("service"),
+                dest: row.get("dest"),
+                currentstop: row.get("currentstop"),
+                nextstop: row.get("nextstop"),
+                line: row.get("line"),
+                consist: row.get("consist"),
+                late: row.get("late"),
+                source: row.get("source"),
+            })
+            .collect();
+        Ok(records)
+    }
+
+    pub async fn commit_new_record(&self, file_id: Uuid, pg_pool: PgPool) -> anyhow::Result<()> {
+        sqlx::query!(
+            r" INSERT INTO records 
+    (id, file_id, trainno, service, dest, currentstop, nextstop, line, consist, late, source)
+VALUES
+    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+            self.id,
+            file_id,
+            self.trainno,
+            self.service,
+            self.dest,
+            self.currentstop,
+            self.nextstop,
+            self.line,
+            self.consist,
+            self.late,
+            self.source,
+        )
+        .execute(&pg_pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn commit_new_records(
+        records: &Vec<TrainView>,
+        file_id: Uuid,
+        pg_pool: PgPool,
+    ) -> anyhow::Result<u64> {
+        let mut builder = QueryBuilder::new(
+            r" INSERT INTO records 
+    (id, file_id, trainno, service, dest, currentstop, nextstop, line, consist, late, source) ",
+        );
+        builder.push_values(records.iter(), |mut a, record| {
+            a.push_bind(&record.id)
+                .push_bind(file_id)
+                .push_bind(&record.trainno)
+                .push_bind(&record.service)
+                .push_bind(&record.dest)
+                .push_bind(&record.currentstop)
+                .push_bind(&record.nextstop)
+                .push_bind(&record.line)
+                .push_bind(&record.consist)
+                .push_bind(&record.late)
+                .push_bind(&record.source);
+        });
+        let inserted = builder.build().execute(&pg_pool).await?;
+        Ok(inserted.rows_affected())
+    }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(transparent)]
-pub struct Content(pub Vec<TrainView>);
+#[derive(Debug, Clone)]
+pub struct Content {
+    pub timestamp: DateTime<Utc>,
+    pub raw: String,
+    pub trains: Vec<TrainView>,
+}
+
+pub struct File {
+    id: Uuid,
+    received_at: DateTime<Utc>,
+    contents: String,
+}
+
+impl Content {
+    pub async fn commit_file(&self, id: Uuid, pg_pool: PgPool) -> anyhow::Result<File> {
+        sqlx::query!(
+            "INSERT INTO files (id, received_at, contents) VALUES ($1, $2, $3)",
+            id,
+            self.timestamp.naive_utc(),
+            self.raw.clone()
+        )
+        .execute(&pg_pool)
+        .await?;
+        TrainView::commit_new_records(&self.trains, id, pg_pool).await?;
+
+        Ok(File {
+            id,
+            received_at: self.timestamp,
+            contents: self.raw.to_owned(),
+        })
+    }
+}
