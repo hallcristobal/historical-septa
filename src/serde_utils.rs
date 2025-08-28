@@ -32,4 +32,3 @@ where
 {
     serializer.serialize_i64(val.timestamp())
 }
-

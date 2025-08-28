@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::tracking::{Changed, Value};
@@ -10,11 +10,11 @@ pub struct TrainView {
         default,
         serialize_with = "crate::serde_utils::serialize_date_time"
     )]
-    pub timestamp: chrono::DateTime<Local>,
-    #[serde(deserialize_with = "crate::serde_utils::deserialize_f32_string")]
-    pub lat: f32,
-    #[serde(deserialize_with = "crate::serde_utils::deserialize_f32_string")]
-    pub lon: f32,
+    pub timestamp: chrono::DateTime<Utc>,
+    // #[serde(deserialize_with = "crate::serde_utils::deserialize_f32_string")]
+    // pub lat: f32,
+    // #[serde(deserialize_with = "crate::serde_utils::deserialize_f32_string")]
+    // pub lon: f32,
     pub trainno: String,
     pub service: String,
     pub dest: String,
@@ -22,15 +22,15 @@ pub struct TrainView {
     pub nextstop: String,
     pub line: String,
     pub consist: String,
-    #[serde(deserialize_with = "crate::serde_utils::deserialize_opt_f32_string")]
-    pub heading: Option<f32>,
+    // #[serde(deserialize_with = "crate::serde_utils::deserialize_opt_f32_string")]
+    // pub heading: Option<f32>,
     pub late: i32,
     #[serde(rename = "SOURCE")]
     pub source: String,
-    #[serde(rename = "TRACK")]
-    pub track: String,
-    #[serde(rename = "TRACK_CHANGE")]
-    pub track_change: String,
+    // #[serde(rename = "TRACK")]
+    // pub track: String,
+    // #[serde(rename = "TRACK_CHANGE")]
+    // pub track_change: String,
 }
 
 impl TrainView {
@@ -56,14 +56,14 @@ impl TrainView {
                 new_value: Value::Int(self.late),
             });
         }
-        if self.track != prev.track {
-            changed.push(Changed {
-                timestamp: self.timestamp,
-                key: String::from("track"),
-                old_value: Value::String(prev.track.to_owned()),
-                new_value: Value::String(self.track.to_owned()),
-            });
-        }
+        // if self.track != prev.track {
+        //     changed.push(Changed {
+        //         timestamp: self.timestamp,
+        //         key: String::from("track"),
+        //         old_value: Value::String(prev.track.to_owned()),
+        //         new_value: Value::String(self.track.to_owned()),
+        //     });
+        // }
 
         if changed.len() > 0 {
             Some(changed)

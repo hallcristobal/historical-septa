@@ -1,6 +1,6 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
-use chrono::{DateTime, Local, TimeZone};
+use chrono::{DateTime, TimeZone, Utc};
 use serde::Serialize;
 
 #[derive(Debug, Serialize, Clone)]
@@ -14,23 +14,23 @@ pub enum Value {
 #[derive(Debug, Serialize, Clone)]
 pub struct Changed {
     #[serde(serialize_with = "crate::serde_utils::serialize_date_time")]
-    pub timestamp: DateTime<Local>,
+    pub timestamp: DateTime<Utc>,
     pub key: String,
     pub old_value: Value,
     pub new_value: Value,
 }
 
 pub struct Tracking<T> {
-    pub most_recent_timestamp: DateTime<Local>,
-    pub most_recent_item: Option<Rc<T>>,
-    pub items: Vec<Rc<T>>,
+    pub most_recent_timestamp: DateTime<Utc>,
+    pub most_recent_item: Option<Arc<T>>,
+    pub items: Vec<Arc<T>>,
     pub latest_changes: Option<Vec<Changed>>,
 }
 
 impl<T> Default for Tracking<T> {
     fn default() -> Self {
         Tracking {
-            most_recent_timestamp: Local.timestamp_opt(0, 0).unwrap(),
+            most_recent_timestamp: Utc.timestamp_opt(0, 0).unwrap(),
             most_recent_item: None,
             items: Vec::new(),
             latest_changes: None,
