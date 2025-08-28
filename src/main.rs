@@ -2,12 +2,12 @@ use actix_web::{
     App, HttpServer, Responder,
     web::{self, Json},
 };
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
-use std::{collections::HashMap, fs, io::BufReader, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{
     RwLock,
-    mpsc::{Receiver, Sender, UnboundedSender},
+    mpsc::{Receiver, Sender},
 };
 use tracking::Tracking;
 
