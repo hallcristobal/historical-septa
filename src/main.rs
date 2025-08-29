@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 use actix_web::{
     App, HttpServer, Responder,
     web::{self, Json},
@@ -6,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, env, sync::Arc, time::Duration};
 use tokio::sync::{
     RwLock,
     mpsc::{Receiver, Sender},
@@ -55,13 +58,13 @@ async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>) {
         if content.trains.len() == 0 {
             // TODO: Should i drop the file if there's no "changed" trains, should i keep it but
             // just not keep a record?
-            println!("File is not changed.");
+            info!("File is not changed.");
             let _ = Fetch::new(content.timestamp, "UNCHANGED".to_string(), None)
                 .store_fetch(state.read().await.pg_pool.clone())
                 .await;
             continue;
         }
-        println!(
+        debug!(
             "There are {} trains changed of the {}.",
             content.trains.len(),
             incomming_len
@@ -97,7 +100,7 @@ async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>) {
         let _ = Fetch::new(content.timestamp, "OK".to_string(), Some(result))
             .store_fetch(state.read().await.pg_pool.clone())
             .await;
-        println!("Processed {len} updates. Wrote {updated}.");
+        info!("Processed {len} updates. Wrote {updated}.");
     }
 }
 
@@ -107,7 +110,7 @@ async fn poll_for_train_view(state: SharedAppState, interval: u64, sender: Sende
         match septa::api::fetch_train_view().await {
             Ok(content) => match sender.send(content).await {
                 Err(e) => {
-                    eprintln!("Sender failed: {e:?}");
+                    error!("Sender failed: {e:?}");
                     break;
                 }
                 _ => {}
@@ -141,13 +144,15 @@ async fn populate_known_statuses(state: SharedAppState) -> anyhow::Result<usize>
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().unwrap();
+    println!("trace");
+    pretty_env_logger::init_timed();
     let state = AppState {
         train_statuses: HashMap::new(),
         pg_pool: db::init().await.unwrap(),
     };
     let state = Arc::new(RwLock::new(state));
     let backfilled = populate_known_statuses(state.clone()).await?;
-    println!("Backfilled {} statuses during startup.", backfilled);
+    info!("Backfilled {} statuses during startup.", backfilled);
     let state_handle = state.clone();
     let (file_sender, file_receiver) = tokio::sync::mpsc::channel(1);
     let _poll_handle = tokio::spawn(async move {
@@ -269,7 +274,7 @@ async fn get_train(
     {
         Ok(records) => Json(Response { records }),
         Err(e) => {
-            eprintln!("Error fetching: {e}");
+            error!("Error fetching: {e}");
             Json(Response {
                 records: Vec::new(),
             })
@@ -331,7 +336,7 @@ fn log_current_cared_statuses(statuses: &HashMap<String, Tracking<TrainView>>) {
     statuses.iter().for_each(|(trainno, tracking)| {
         if let Some(ref item) = tracking.most_recent_item {
             if item.late > 3 {
-                println!("Train {} is running {} minutes late.", trainno, item.late);
+                info!("Train {} is running {} minutes late.", trainno, item.late);
             }
         }
     });

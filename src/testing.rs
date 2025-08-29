@@ -32,7 +32,7 @@
 //         }
 //     });
 //
-//     println!("keys: {:?}", state.train_statuses.keys().len());
+//     info!("keys: {:?}", state.train_statuses.keys().len());
 //     log_current_cared_statuses(&state.train_statuses);
 //     Ok(())
 // }

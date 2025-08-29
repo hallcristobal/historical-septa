@@ -17,8 +17,8 @@ pub async fn fetch_train_view() -> anyhow::Result<Content, FailedFetchError> {
         .await
         .map_err(|e| FailedFetchError(chrono::Utc::now(), format!("{e:?}")))?;
 
-    println!("Fetched with status: {}", response.status());
-    // println!("Headers:\n{:#?}", response.headers());
+    info!("Fetched with status: {}", response.status());
+    trace!("Headers:\n{:#?}", response.headers());
     let date: DateTime<Utc> = response
         .headers()
         .get("date")
