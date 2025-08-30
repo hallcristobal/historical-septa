@@ -4,8 +4,8 @@ use chrono::{DateTime, Utc};
 use reqwest;
 
 use crate::{
+    db::tracking::FailedFetchError,
     septa::train_view::{Content, TrainView},
-    tracking::FailedFetchError,
 };
 fn err_to_string<E: Debug>(e: E) -> String {
     format!("{:?}", e)

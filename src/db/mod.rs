@@ -1,5 +1,7 @@
 use sqlx::PgPool;
 
+pub mod tracking;
+
 pub async fn init() -> anyhow::Result<PgPool> {
     PgPool::connect(&dotenvy::var("DATABASE_URL")?)
         .await

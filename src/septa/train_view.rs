@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Database, PgPool, QueryBuilder, Row, query_builder};
 use uuid::Uuid;
 
-use crate::{
-    db::QueryOrdering,
+use crate::db::{
+    QueryOrdering,
     tracking::{Changed, Value},
 };
 
