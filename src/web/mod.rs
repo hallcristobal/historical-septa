@@ -2,7 +2,6 @@ use actix_web::{
     HttpRequest, HttpResponse, Responder, ResponseError,
     error::QueryPayloadError,
     http::StatusCode,
-    middleware::ErrorHandlers,
     web::{self, Json, QueryConfig},
 };
 use chrono::{DateTime, Utc};
@@ -60,6 +59,7 @@ fn query_error_handler(err: QueryPayloadError, req: &HttpRequest) -> actix_web::
 pub struct GetCurrentQuery {
     all: Option<bool>,
     line: Option<String>,
+    limit: Option<u32>,
 }
 pub async fn current_trains(
     query: web::Query<GetCurrentQuery>,
@@ -69,6 +69,7 @@ pub async fn current_trains(
         .with_time(chrono::NaiveTime::from_hms_opt(2, 0, 0).unwrap())
         .unwrap()
         .to_utc();
+    let count = query.limit.unwrap_or(100);
     let all = query.all.unwrap_or(false);
     let line = query.line.as_ref();
     let recent = data
@@ -97,12 +98,17 @@ pub async fn current_trains(
                 None
             }
         })
+        .take(count as usize)
         .collect::<Vec<Arc<TrainView>>>();
     #[derive(Serialize)]
     struct Response {
+        count: u32,
         statuses: Vec<Arc<TrainView>>,
     }
-    Json(Response { statuses: recent })
+    Json(Response {
+        count: recent.len() as u32,
+        statuses: recent,
+    })
 }
 
 pub async fn most_recent_changes(data: web::Data<SharedAppState>) -> impl Responder {
@@ -163,6 +169,7 @@ pub async fn get_train(
 ) -> impl Responder {
     #[derive(Serialize)]
     struct Response {
+        count: usize,
         records: Vec<TrainView>,
     }
     let pg_pool = data.read().await.pg_pool.clone();
@@ -177,10 +184,14 @@ pub async fn get_train(
     )
     .await
     {
-        Ok(records) => Json(Response { records }),
+        Ok(records) => Json(Response {
+            count: records.len(),
+            records,
+        }),
         Err(e) => {
             error!("Error fetching: {e}");
             Json(Response {
+                count: 0,
                 records: Vec::new(),
             })
         }

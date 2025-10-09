@@ -11,7 +11,6 @@ use crate::{db::tracking::Tracking, septa::train_view::TrainView};
 mod db;
 mod septa;
 mod serde_utils;
-mod testing;
 mod web;
 
 struct AppState {

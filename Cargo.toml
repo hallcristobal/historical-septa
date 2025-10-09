@@ -11,6 +11,9 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio", "postgres", "chrono", "
 tokio = { version = "1.47.1", features = ["full"] }
 anyhow = "1.0.99"
 dotenvy = "0.15.7"
+env_logger = "0.11.8"
+pretty_env_logger = "0.5.0"
+log = "0.4.27"
 
 [dependencies]
 actix = "0.13.5"
@@ -25,6 +28,6 @@ serde_json = { version = "1.0.143", features = ["raw_value"] }
 sqlx = { workspace = true }
 tokio = { workspace = true }
 uuid = { version = "1.18.0", features = ["v4", "serde"] }
-env_logger = "0.11.8"
-pretty_env_logger = "0.5.0"
-log = "0.4.27"
+env_logger = { workspace = true }
+pretty_env_logger = { workspace = true }
+log = { workspace = true }

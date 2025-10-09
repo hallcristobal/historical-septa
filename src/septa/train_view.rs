@@ -113,7 +113,7 @@ impl TrainView {
         let records = sqlx::query!(
             r"
 select 
-    distinct on (trainno) 
+  distinct on (trainno) 
   records.id,
   file_id,
   trainno,
@@ -125,11 +125,9 @@ select
   consist,
   late,
   source,
-  files.received_at
+  received_at
 from 
      records 
-join 
-    files on records.file_id = files.id 
 order by 
     trainno, 
     received_at desc
@@ -141,7 +139,10 @@ order by
         .map(|row| TrainView {
             id: row.id,
             file_id: row.file_id,
-            timestamp: row.received_at.and_utc(),
+            timestamp: row
+                .received_at
+                .and_then(|r| Some(r.and_utc()))
+                .unwrap_or_default(),
             trainno: row.trainno.clone(),
             service: row.service.clone(),
             dest: row.dest.clone(),
@@ -176,11 +177,9 @@ order by
   consist,
   late,
   source,
-  files.received_at
+  received_at
 from
     records
-join 
-    files on records.file_id = files.id
 "#,
         );
         fn where_helper<'args, T, DB: Database>(
@@ -238,14 +237,15 @@ join
         Ok(records)
     }
 
-    pub async fn commit_new_record(&self, file_id: Uuid, pg_pool: PgPool) -> anyhow::Result<()> {
+    pub async fn commit_new_record(&self, file: &File, pg_pool: PgPool) -> anyhow::Result<()> {
         sqlx::query!(
             r" INSERT INTO records 
-    (id, file_id, trainno, service, dest, currentstop, nextstop, line, consist, late, source)
+    (id, file_id, received_at, trainno, service, dest, currentstop, nextstop, line, consist, late, source)
 VALUES
-    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
             self.id,
-            file_id,
+            file.id,
+            file.received_at.naive_utc(),
             self.trainno,
             self.service,
             self.dest,
@@ -263,16 +263,17 @@ VALUES
 
     pub async fn commit_new_records(
         records: &Vec<TrainView>,
-        file_id: Uuid,
+        file: &File,
         pg_pool: PgPool,
     ) -> anyhow::Result<u64> {
         let mut builder = QueryBuilder::new(
             r" INSERT INTO records 
-    (id, file_id, trainno, service, dest, currentstop, nextstop, line, consist, late, source) ",
+    (id, file_id, received_at, trainno, service, dest, currentstop, nextstop, line, consist, late, source) ",
         );
         builder.push_values(records.iter(), |mut a, record| {
             a.push_bind(&record.id)
-                .push_bind(file_id)
+                .push_bind(&file.id)
+                .push_bind(file.received_at.naive_utc())
                 .push_bind(&record.trainno)
                 .push_bind(&record.service)
                 .push_bind(&record.dest)
@@ -311,12 +312,13 @@ impl Content {
         )
         .execute(&pg_pool)
         .await?;
-        TrainView::commit_new_records(&self.trains, id, pg_pool).await?;
-
-        Ok(File {
+        let file = File {
             id,
             received_at: self.timestamp,
             contents: self.raw.to_owned(),
-        })
+        };
+        TrainView::commit_new_records(&self.trains, &file, pg_pool).await?;
+
+        Ok(file)
     }
 }
