@@ -1,7 +1,7 @@
 use super::api;
 use chrono::{DateTime, Utc};
 use serde_json::json;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, io::ErrorKind, sync::Arc, time::Duration};
 use tokio::{
     sync::mpsc::{Receiver, Sender},
     task::JoinHandle,
@@ -13,9 +13,12 @@ use crate::{
     septa::train_view::{Content, TrainView},
 };
 
+pub const FILES_OUTPUT_DIR: &'static str = "./files";
+
 pub async fn start(state: SharedAppState) -> anyhow::Result<(JoinHandle<()>, JoinHandle<()>)> {
     let state_handle = state.clone();
     let (file_sender, file_receiver) = tokio::sync::mpsc::channel(1);
+    ensure_directories_created().await;
     let poll_handle = tokio::spawn(async move {
         let _ = poll_for_train_view(state_handle, 5, file_sender).await;
     });
@@ -25,6 +28,20 @@ pub async fn start(state: SharedAppState) -> anyhow::Result<(JoinHandle<()>, Joi
         let _ = accept_new_file(state_handle, file_receiver).await;
     });
     Ok((poll_handle, processer_handle))
+}
+pub async fn ensure_directories_created() {
+    match tokio::fs::create_dir(FILES_OUTPUT_DIR).await {
+        Ok(_) => {
+            warn!("Output directory created.");
+            Ok(())
+        }
+        Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+            warn!("Output directory already exists. Nothing to do.");
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+    .expect("Unable to create output directory");
 }
 pub async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>) {
     while let Some(mut content) = recv.recv().await {

@@ -1,12 +1,12 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Database, PgPool, QueryBuilder, Row, query_builder};
+use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use crate::db::{
-    QueryOrdering,
-    tracking::{Changed, Value},
-};
+use crate::{db::{
+    tracking::{Changed, Value}, QueryOrdering
+}, septa::processing::FILES_OUTPUT_DIR};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq)]
 pub struct TrainView {
@@ -237,6 +237,7 @@ from
         Ok(records)
     }
 
+    #[allow(unused)]
     pub async fn commit_new_record(&self, file: &File, pg_pool: PgPool) -> anyhow::Result<()> {
         sqlx::query!(
             r" INSERT INTO records 
@@ -299,23 +300,46 @@ pub struct Content {
 pub struct File {
     id: Uuid,
     received_at: DateTime<Utc>,
-    contents: String,
+    // contents: String,
 }
 
 impl Content {
     pub async fn commit_file(&self, id: Uuid, pg_pool: PgPool) -> anyhow::Result<File> {
         sqlx::query!(
-            "INSERT INTO files (id, received_at, contents) VALUES ($1, $2, $3)",
+            "INSERT INTO files (id, received_at) VALUES ($1, $2)",
             id,
             self.timestamp.naive_utc(),
-            self.raw.clone()
         )
         .execute(&pg_pool)
         .await?;
+
+        {
+            let contents = self.raw.clone();
+            let path = format!("{}/{}.json", FILES_OUTPUT_DIR, id);
+            tokio::spawn(async move {
+                let mut file = match tokio::fs::File::create(&path).await {
+                    Ok(file) => file,
+                    Err(err) => {
+                        error!("Failed to write file to file system: {:?}", err);
+                        return;
+                    }
+                };
+                match file.write_all(contents.as_bytes()).await {
+                    Ok(_) => {
+                        trace!("Wrote file to file system: {}", path);
+                    }
+                    Err(err) => {
+                        error!("Failed to write file to file system: {:?}", err);
+                        return;
+                    }
+                };
+            });
+        }
+
         let file = File {
             id,
             received_at: self.timestamp,
-            contents: self.raw.to_owned(),
+            // contents: self.raw.to_owned(),
         };
         TrainView::commit_new_records(&self.trains, &file, pg_pool).await?;
 

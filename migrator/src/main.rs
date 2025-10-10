@@ -1,6 +1,5 @@
 use std::env;
-
-use sqlx::Connection;
+use sqlx::{postgres::PgConnectOptions, Connection};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -16,7 +15,13 @@ async fn main() -> anyhow::Result<()> {
     }
 
     pretty_env_logger::init_timed();
-    let mut pool = sqlx::PgConnection::connect(&std::env::var("DATABASE_URL")?).await?;
+    let opts: PgConnectOptions = dotenvy::var("DATABASE_URL")?.parse()?;
+    let opts = if opts.get_host() != "127.0.0.1" && opts.get_host() != "localhost" {
+        opts.ssl_mode(sqlx::postgres::PgSslMode::Require)
+    } else {
+        opts
+    };
+    let mut pool = sqlx::PgConnection::connect_with(&opts).await?;
     sqlx::migrate!("../migrations").run(&mut pool).await?;
     Ok(())
 }

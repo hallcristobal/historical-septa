@@ -1,11 +1,15 @@
-use sqlx::PgPool;
+use sqlx::{PgPool, postgres::PgConnectOptions};
 
 pub mod tracking;
 
 pub async fn init() -> anyhow::Result<PgPool> {
-    PgPool::connect(&dotenvy::var("DATABASE_URL")?)
-        .await
-        .map_err(anyhow::Error::msg)
+    let opts: PgConnectOptions = dotenvy::var("DATABASE_URL")?.parse()?;
+    let opts = if opts.get_host() != "127.0.0.1" && opts.get_host() != "localhost" {
+        opts.ssl_mode(sqlx::postgres::PgSslMode::Require)
+    } else {
+        opts
+    };
+    PgPool::connect_with(opts).await.map_err(anyhow::Error::msg)
 }
 
 #[derive(Debug, Clone, Copy)]
