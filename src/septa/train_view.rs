@@ -204,15 +204,11 @@ from
             where_helper("received_at", ">", after, &mut builder);
         }
 
-        if let Some(order) = order {
-            // TODO: This is unsafe, but it's the best way to do it since it's an enum, and we
-            // alredy throw an error if it's the incorrect of the two options anywa...
-            builder.push(format!(" ORDER BY received_at {}", order));
-        }
-        if let Some(limit) = limit {
-            builder.push(" LIMIT ");
-            builder.push_bind(limit);
-        }
+        // TODO: This is unsafe, but it's the best way to do it since it's an enum, and we
+        // alredy throw an error if it's the incorrect of the two options anywa...
+        builder.push(format!(" ORDER BY received_at {}", order.unwrap_or(QueryOrdering::DESC)));
+        builder.push(" LIMIT ");
+        builder.push_bind(limit.unwrap_or(1));
 
         let results = builder.build();
         let results = results.fetch_all(&pool).await?;

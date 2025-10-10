@@ -85,9 +85,15 @@ pub async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>)
             let content = content.clone();
             let file_id = file_id.clone();
             tokio::spawn(async move {
-                let _ = content
+                match content
                     .commit_file(file_id, state.read().await.pg_pool.clone())
-                    .await;
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(err) => {
+                        error!("Failed to execute commit_file: {:?}", err);
+                    }
+                }
             });
         }
         let len = content.trains.len();

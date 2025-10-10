@@ -22,6 +22,8 @@ async fn main() -> anyhow::Result<()> {
         opts
     };
     let mut pool = sqlx::PgConnection::connect_with(&opts).await?;
-    sqlx::migrate!("../migrations").run(&mut pool).await?;
+    if let Err(err) = sqlx::migrate!("../migrations").run(&mut pool).await {
+        eprintln!("Error running migration: {}", err);
+    }
     Ok(())
 }

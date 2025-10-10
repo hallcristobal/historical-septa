@@ -1,0 +1,1 @@
+ALTER TABLE files ALTER COLUMN contents DROP NOT NULL;
