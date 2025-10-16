@@ -12,7 +12,7 @@ Query Options:
 | limit    | number {default: 100}            | number of records to return
 | before   | unix timestamp {default: null}   | timestamp in seconds to return results before
 | after    | unix timestamp {default: null}   | timestamp in seconds to return results after
-| order    | asc|desc {default: desc}         | ordering to return results based on received_at timestamp
+| order    | asc\|desc {default: desc}         | ordering to return results based on received_at timestamp
 
 `/api/current`  
 * If `all` is set to false, or omitted, it will only return trains since 2AM on the current day
