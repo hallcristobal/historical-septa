@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Database, PgPool, Row, query_builder};
 use tokio::io::AsyncWriteExt;
@@ -114,6 +114,11 @@ impl TrainView {
 
     /// Database
     pub async fn get_most_recent_all(pool: PgPool) -> anyhow::Result<Vec<TrainView>> {
+        let yesterday = chrono::Local::now() - Duration::days(1);
+        let two_am_yesterday = yesterday
+            .with_time(chrono::NaiveTime::from_hms_opt(2, 0, 0).unwrap())
+            .unwrap()
+            .to_utc();
         let records = sqlx::query!(
             r"
 select 
@@ -132,10 +137,13 @@ select
   received_at
 from 
      records 
+where
+  received_at > $1
 order by 
     trainno, 
     received_at desc
-"
+",
+            two_am_yesterday.naive_utc()
         )
         .fetch_all(&pool)
         .await?

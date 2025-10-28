@@ -1,5 +1,6 @@
 /// TODO: Implement this dynamically with proc_macros
 use serde::Deserialize;
+use uuid::Uuid;
 
 const DEFAULT_RESPONSE_FIELDS: [&'static str; 12] = [
     "records.id",
@@ -17,9 +18,10 @@ const DEFAULT_RESPONSE_FIELDS: [&'static str; 12] = [
 ];
 
 #[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct QueryBuilder {
-    pub id: Option<String>,
-    pub file_id: Option<String>,
+    pub id: Option<Uuid>,
+    pub file_id: Option<Uuid>,
     pub timestamp: Option<i64>,
     pub trainno: Option<String>,
     pub service: Option<String>,
@@ -30,6 +32,7 @@ pub struct QueryBuilder {
     pub consist: Option<String>,
     pub late: Option<i32>,
     pub source: Option<String>,
+    #[serde(skip)]
     pub fields: Option<Vec<String>>,
 }
 
@@ -38,11 +41,11 @@ impl QueryBuilder {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn with_id(mut self, id: String) -> Self {
+    pub fn with_id(mut self, id: Uuid) -> Self {
         self.id = Some(id);
         self
     }
-    pub fn with_file_id(mut self, file_id: String) -> Self {
+    pub fn with_file_id(mut self, file_id: Uuid) -> Self {
         self.file_id = Some(file_id);
         self
     }
@@ -96,6 +99,7 @@ impl QueryBuilder {
 {}
 from
     records
+where
 "#,
             self.fields
                 .unwrap_or(DEFAULT_RESPONSE_FIELDS.map(|s| s.to_owned()).to_vec())
@@ -116,7 +120,14 @@ from
         }
         item!(id);
         item!(file_id);
-        item!(timestamp);
+        if let Some(timestamp) = self.timestamp {
+            if and {
+                builder.push(" and ");
+            }
+            builder.push("received_at = ");
+            builder.push_bind(chrono::DateTime::from_timestamp(timestamp, 0));
+            and = true;
+        };
         item!(trainno);
         item!(service);
         item!(dest);

@@ -5,6 +5,7 @@ use actix_web::{
     web::{self, Json, QueryConfig},
 };
 use chrono::{DateTime, Utc};
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::{fmt::Display, sync::Arc};
 
@@ -109,10 +110,13 @@ async fn current_trains(
         count: u32,
         statuses: Vec<Arc<TrainView>>,
     }
-    Json(Response {
-        count: recent.len() as u32,
-        statuses: recent,
-    })
+    (
+        Json(Response {
+            count: recent.len() as u32,
+            statuses: recent,
+        }),
+        StatusCode::OK,
+    )
 }
 
 async fn most_recent_changes(data: web::Data<SharedAppState>) -> impl Responder {
@@ -152,7 +156,7 @@ async fn most_recent_changes(data: web::Data<SharedAppState>) -> impl Responder 
             None => None,
         })
         .collect();
-    Json(Response { statuses: recent })
+    (Json(Response { statuses: recent }), StatusCode::OK)
 }
 
 #[derive(Deserialize)]
@@ -188,16 +192,22 @@ async fn get_train(
     )
     .await
     {
-        Ok(records) => Json(Response {
-            count: records.len(),
-            records,
-        }),
+        Ok(records) => (
+            Json(Response {
+                count: records.len(),
+                records,
+            }),
+            StatusCode::OK,
+        ),
         Err(e) => {
             error!("Error fetching: {e}");
-            Json(Response {
-                count: 0,
-                records: Vec::new(),
-            })
+            (
+                Json(Response {
+                    count: 0,
+                    records: Vec::new(),
+                }),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
         }
     }
 }
@@ -210,7 +220,7 @@ struct QueryTrainQuery {
     order: Option<QueryOrdering>,
 }
 async fn query_train(
-    body: web::Json<QueryBuilder>,
+    mut payload: web::Payload,
     query: web::Query<QueryTrainQuery>,
     data: web::Data<SharedAppState>,
 ) -> impl Responder {
@@ -218,11 +228,44 @@ async fn query_train(
     struct Response {
         count: usize,
         records: Vec<TrainView>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     }
+    let mut body = web::BytesMut::new();
+    while let Some(chunk) = payload.next().await {
+        if let Err(err) = chunk {
+            let err_str = format!("Error decoding body: {:?}", err);
+            error!("{}", err_str);
+            return (
+                Json(Response {
+                    count: 0,
+                    records: Vec::new(),
+                    error: Some(err_str),
+                }),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+        body.extend_from_slice(&chunk.unwrap());
+    }
+
+    let body = serde_json::from_slice::<QueryBuilder>(&body);
+    if let Err(err) = body {
+        let err_str = format!("Error decoding body: {:?}", err);
+        error!("{}", err_str);
+        return (
+            Json(Response {
+                count: 0,
+                records: Vec::new(),
+                error: Some(err_str),
+            }),
+            StatusCode::BAD_REQUEST,
+        );
+    }
+
     let pg_pool = data.read().await.pg_pool.clone();
     match TrainView::query_trains(
         pg_pool,
-        body.0,
+        body.unwrap(),
         query.limit,
         query.before.and_then(|ts| DateTime::from_timestamp(ts, 0)),
         query.after.and_then(|ts| DateTime::from_timestamp(ts, 0)),
@@ -230,16 +273,25 @@ async fn query_train(
     )
     .await
     {
-        Ok(records) => Json(Response {
-            count: records.len(),
-            records,
-        }),
-        Err(e) => {
-            error!("Error fetching: {e}");
+        Ok(records) => (
             Json(Response {
-                count: 0,
-                records: Vec::new(),
-            })
+                count: records.len(),
+                records,
+                error: None,
+            }),
+            StatusCode::OK,
+        ),
+        Err(e) => {
+            let err_str = format!("Error fetching: {e:?}");
+            error!("{}", err_str);
+            (
+                Json(Response {
+                    count: 0,
+                    records: Vec::new(),
+                    error: Some(err_str),
+                }),
+                StatusCode::OK,
+            )
         }
     }
 }
