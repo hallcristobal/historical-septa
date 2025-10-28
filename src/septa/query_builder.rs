@@ -93,40 +93,43 @@ impl QueryBuilder {
         self.fields = Some(fields.into_iter().map(|s| s.into()).collect());
         self
     }
-    pub fn build<'b>(self) -> sqlx::QueryBuilder<'b, sqlx::postgres::Postgres> {
+    pub fn build<'b>(self) -> (sqlx::QueryBuilder<'b, sqlx::postgres::Postgres>, bool) {
         let mut builder = sqlx::QueryBuilder::new(format!(
             r#"select
 {}
 from
     records
-where
 "#,
             self.fields
                 .unwrap_or(DEFAULT_RESPONSE_FIELDS.map(|s| s.to_owned()).to_vec())
                 .join(",")
         ));
-        let mut and = false;
+        let mut is_whered = false;
         macro_rules! item {
             ($item:ident) => {
                 if let Some($item) = self.$item {
-                    if and {
+                    if !is_whered {
+                        builder.push(" where ");
+                        is_whered = true;
+                    } else {
                         builder.push(" and ");
                     }
                     builder.push(format!("{} = ", stringify!($item)));
                     builder.push_bind($item);
-                    and = true;
                 }
             };
         }
         item!(id);
         item!(file_id);
         if let Some(timestamp) = self.timestamp {
-            if and {
+            if !is_whered {
+                builder.push(" where ");
+                is_whered = true;
+            } else {
                 builder.push(" and ");
             }
             builder.push("received_at = ");
             builder.push_bind(chrono::DateTime::from_timestamp(timestamp, 0));
-            and = true;
         };
         item!(trainno);
         item!(service);
@@ -138,6 +141,6 @@ where
         item!(late);
         item!(source);
 
-        builder
+        (builder, is_whered)
     }
 }

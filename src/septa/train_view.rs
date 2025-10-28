@@ -272,14 +272,26 @@ from
             "source",
             "received_at",
         ]);
-        let mut builder = query.build();
+        let (mut builder, mut where_added) = query.build();
 
         if let Some(before) = before {
-            builder.push(" and recieved_at < ");
+            if !where_added {
+                builder.push(" where ");
+                where_added = true;
+            } else {
+                builder.push(" and ");
+            }
+            builder.push(" received_at < ");
             builder.push_bind(before);
         }
         if let Some(after) = after {
-            builder.push(" and recieved_at > ");
+            if !where_added {
+                builder.push(" where ");
+                let _where_added = true;
+            } else {
+                builder.push(" and ");
+            }
+            builder.push(" received_at > ");
             builder.push_bind(after);
         }
 
