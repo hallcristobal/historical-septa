@@ -1,6 +1,7 @@
 use chrono::TimeZone;
 use serde::Deserialize;
 
+#[allow(unused)]
 pub fn deserialize_opt_f32_string<'de, D>(deserializer: D) -> Result<Option<f32>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -15,6 +16,8 @@ where
         }
     }
 }
+
+#[allow(unused)]
 pub fn deserialize_f32_string<'de, D>(deserializer: D) -> Result<f32, D::Error>
 where
     D: serde::Deserializer<'de>,

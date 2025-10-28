@@ -1,5 +1,5 @@
+use sqlx::{Connection, postgres::PgConnectOptions};
 use std::env;
-use sqlx::{postgres::PgConnectOptions, Connection};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {

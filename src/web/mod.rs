@@ -11,7 +11,10 @@ use std::{fmt::Display, sync::Arc};
 use crate::{
     SharedAppState,
     db::{QueryOrdering, tracking::Changed},
-    septa::train_view::TrainView,
+    septa::{
+        query_builder::QueryBuilder,
+        train_view::{TrainView, enforce_limit_bounds},
+    },
 };
 
 pub fn routes(cfg: &mut web::ServiceConfig) {
@@ -20,7 +23,8 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
             web::scope("/api")
                 .route("/current", web::get().to(current_trains))
                 .route("/train/{id}", web::get().to(get_train))
-                .route("/recent_changes", web::get().to(most_recent_changes)),
+                .route("/recent_changes", web::get().to(most_recent_changes))
+                .route("/query", web::post().to(query_train)),
         );
 }
 
@@ -59,9 +63,9 @@ fn query_error_handler(err: QueryPayloadError, req: &HttpRequest) -> actix_web::
 pub struct GetCurrentQuery {
     all: Option<bool>,
     line: Option<String>,
-    limit: Option<u32>,
+    limit: Option<i64>,
 }
-pub async fn current_trains(
+async fn current_trains(
     query: web::Query<GetCurrentQuery>,
     data: web::Data<SharedAppState>,
 ) -> impl Responder {
@@ -69,7 +73,7 @@ pub async fn current_trains(
         .with_time(chrono::NaiveTime::from_hms_opt(2, 0, 0).unwrap())
         .unwrap()
         .to_utc();
-    let count = query.limit.unwrap_or(100);
+    let count = enforce_limit_bounds(query.limit);
     let all = query.all.unwrap_or(false);
     let line = query.line.as_ref();
     let recent = data
@@ -111,7 +115,7 @@ pub async fn current_trains(
     })
 }
 
-pub async fn most_recent_changes(data: web::Data<SharedAppState>) -> impl Responder {
+async fn most_recent_changes(data: web::Data<SharedAppState>) -> impl Responder {
     #[derive(Serialize)]
     struct Change {
         trainno: String,
@@ -162,7 +166,7 @@ struct GetTrainQuery {
     after: Option<i64>,
     order: Option<QueryOrdering>,
 }
-pub async fn get_train(
+async fn get_train(
     path: web::Path<GetTrainPath>,
     query: web::Query<GetTrainQuery>,
     data: web::Data<SharedAppState>,
@@ -177,6 +181,48 @@ pub async fn get_train(
     match TrainView::fetch_for_train(
         pg_pool,
         &path.id,
+        query.limit,
+        query.before.and_then(|ts| DateTime::from_timestamp(ts, 0)),
+        query.after.and_then(|ts| DateTime::from_timestamp(ts, 0)),
+        query.order,
+    )
+    .await
+    {
+        Ok(records) => Json(Response {
+            count: records.len(),
+            records,
+        }),
+        Err(e) => {
+            error!("Error fetching: {e}");
+            Json(Response {
+                count: 0,
+                records: Vec::new(),
+            })
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct QueryTrainQuery {
+    limit: Option<i64>,
+    before: Option<i64>,
+    after: Option<i64>,
+    order: Option<QueryOrdering>,
+}
+async fn query_train(
+    body: web::Json<QueryBuilder>,
+    query: web::Query<QueryTrainQuery>,
+    data: web::Data<SharedAppState>,
+) -> impl Responder {
+    #[derive(Serialize)]
+    struct Response {
+        count: usize,
+        records: Vec<TrainView>,
+    }
+    let pg_pool = data.read().await.pg_pool.clone();
+    match TrainView::query_trains(
+        pg_pool,
+        body.0,
         query.limit,
         query.before.and_then(|ts| DateTime::from_timestamp(ts, 0)),
         query.after.and_then(|ts| DateTime::from_timestamp(ts, 0)),

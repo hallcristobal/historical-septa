@@ -9,6 +9,7 @@ use uuid::Uuid;
 #[serde(untagged)]
 pub enum Value {
     String(String),
+    #[allow(unused)]
     Float(f32),
     Int(i32),
 }
@@ -22,6 +23,7 @@ impl Value {
         }
     }
 
+    #[allow(unused)]
     pub fn to_sql_fields(&self) -> (String, String) {
         match self {
             Value::String(val) => ("String".into(), val.clone()),

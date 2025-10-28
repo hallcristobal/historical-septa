@@ -1,12 +1,16 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Database, PgPool, QueryBuilder, Row, query_builder};
+use sqlx::{Database, PgPool, Row, query_builder};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use crate::{db::{
-    tracking::{Changed, Value}, QueryOrdering
-}, septa::processing::FILES_OUTPUT_DIR};
+use crate::{
+    db::{
+        QueryOrdering,
+        tracking::{Changed, Value},
+    },
+    septa::processing::FILES_OUTPUT_DIR,
+};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq)]
 pub struct TrainView {
@@ -206,9 +210,78 @@ from
 
         // TODO: This is unsafe, but it's the best way to do it since it's an enum, and we
         // alredy throw an error if it's the incorrect of the two options anywa...
-        builder.push(format!(" ORDER BY received_at {}", order.unwrap_or(QueryOrdering::DESC)));
+        builder.push(format!(
+            " ORDER BY received_at {}",
+            order.unwrap_or(QueryOrdering::DESC)
+        ));
         builder.push(" LIMIT ");
-        builder.push_bind(limit.unwrap_or(1));
+        builder.push_bind(enforce_limit_bounds(limit));
+
+        let results = builder.build();
+        let results = results.fetch_all(&pool).await?;
+
+        let records: Vec<TrainView> = results
+            .iter()
+            .map(|row| TrainView {
+                id: row.get("id"),
+                file_id: row.get("file_id"),
+                timestamp: row.get::<NaiveDateTime, &str>("received_at").and_utc(),
+                trainno: row.get("trainno"),
+                service: row.get("service"),
+                dest: row.get("dest"),
+                currentstop: row.get("currentstop"),
+                nextstop: row.get("nextstop"),
+                line: row.get("line"),
+                consist: row.get("consist"),
+                late: row.get("late"),
+                source: row.get("source"),
+            })
+            .collect();
+        Ok(records)
+    }
+
+    pub async fn query_trains(
+        pool: PgPool,
+        query: super::query_builder::QueryBuilder,
+        limit: Option<i64>,
+        before: Option<DateTime<Utc>>,
+        after: Option<DateTime<Utc>>,
+        order: Option<QueryOrdering>,
+    ) -> anyhow::Result<Vec<TrainView>> {
+        // TOOD: Need to specify this because the return type is not dynamic.
+        // this is important. Also we need to sanitize this as well when we make it dynamic later
+        let query = query.with_fields(vec![
+            "records.id",
+            "file_id",
+            "trainno",
+            "service",
+            "dest",
+            "currentstop",
+            "nextstop",
+            "line",
+            "consist",
+            "late",
+            "source",
+            "received_at",
+        ]);
+        let mut builder = query.build();
+
+        if let Some(before) = before {
+            builder.push(" and recieved_at < ");
+            builder.push_bind(before);
+        }
+        if let Some(after) = after {
+            builder.push(" and recieved_at > ");
+            builder.push_bind(after);
+        }
+
+        builder.push(format!(
+            " ORDER BY received_at {}",
+            order.unwrap_or(QueryOrdering::DESC)
+        ));
+        builder.push(" LIMIT ");
+
+        builder.push_bind(enforce_limit_bounds(limit));
 
         let results = builder.build();
         let results = results.fetch_all(&pool).await?;
@@ -263,7 +336,7 @@ VALUES
         file: &File,
         pg_pool: PgPool,
     ) -> anyhow::Result<u64> {
-        let mut builder = QueryBuilder::new(
+        let mut builder = sqlx::QueryBuilder::new(
             r" INSERT INTO records 
     (id, file_id, received_at, trainno, service, dest, currentstop, nextstop, line, consist, late, source) ",
         );
@@ -286,6 +359,18 @@ VALUES
     }
 }
 
+/// Enforces the following restriction on passed limit option: `[1, 300]`
+pub fn enforce_limit_bounds(limit: Option<i64>) -> i64 {
+    let limit = limit.unwrap_or(100);
+    if limit > 300 {
+        300
+    } else if limit < 1 {
+        1
+    } else {
+        limit
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Content {
     pub timestamp: DateTime<Utc>,
@@ -296,7 +381,6 @@ pub struct Content {
 pub struct File {
     id: Uuid,
     received_at: DateTime<Utc>,
-    // contents: String,
 }
 
 impl Content {
@@ -335,7 +419,6 @@ impl Content {
         let file = File {
             id,
             received_at: self.timestamp,
-            // contents: self.raw.to_owned(),
         };
         TrainView::commit_new_records(&self.trains, &file, pg_pool).await?;
 
