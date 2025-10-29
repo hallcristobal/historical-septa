@@ -1,8 +1,9 @@
 use super::api;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Days, Local, Utc};
 use serde_json::json;
 use std::{collections::HashMap, io::ErrorKind, sync::Arc, time::Duration};
 use tokio::{
+    fs,
     sync::mpsc::{Receiver, Sender},
     task::JoinHandle,
 };
@@ -10,22 +11,27 @@ use tokio::{
 use crate::{
     SharedAppState,
     db::tracking::{Fetch, Tracking},
-    septa::train_view::{Content, TrainView},
+    septa::content::Content,
+    septa::train_view::TrainView,
 };
 
 pub const FILES_OUTPUT_DIR: &'static str = "./files";
+pub const POLL_INTERVAL: u64 = 5;
 
 pub async fn start(state: SharedAppState) -> anyhow::Result<(JoinHandle<()>, JoinHandle<()>)> {
     let state_handle = state.clone();
     let (file_sender, file_receiver) = tokio::sync::mpsc::channel(1);
     ensure_directories_created().await;
     let poll_handle = tokio::spawn(async move {
-        let _ = poll_for_train_view(state_handle, 5, file_sender).await;
+        let _ = poll_for_train_view(state_handle, POLL_INTERVAL, file_sender).await;
     });
 
     let state_handle = state.clone();
     let processer_handle = tokio::spawn(async move {
         let _ = accept_new_file(state_handle, file_receiver).await;
+    });
+    let _output_dir_watchdog = tokio::spawn(async move {
+        let _ = schedule_file_cleanup_job().await;
     });
     Ok((poll_handle, processer_handle))
 }
@@ -136,6 +142,41 @@ pub async fn poll_for_train_view(state: SharedAppState, interval: u64, sender: S
                     .await;
             }
         }
+        tokio::time::sleep(sleep_duration).await;
+    }
+}
+pub async fn schedule_file_cleanup_job() {
+    let sleep_duration = Duration::from_secs(60 * 60); // 1 Hour
+    info!(
+        "Started file cleanup watchdog, scheduled to run every {} seconds. ",
+        sleep_duration.as_secs()
+    );
+    loop {
+        info!("Starting file cleanup task.");
+        let mut removed = 0;
+        let last_week = chrono::Local::now().checked_sub_days(Days::new(7)).unwrap();
+        match fs::read_dir(FILES_OUTPUT_DIR).await {
+            Ok(mut files) => {
+                while let Ok(Some(file)) = files.next_entry().await {
+                    if let Ok(btime) = file.metadata().await.and_then(|meta| meta.created()) {
+                        let created_time = chrono::DateTime::<Local>::from(btime);
+                        if created_time < last_week {
+                            removed += 1;
+                            let path = file.path().clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = fs::remove_file(&path).await {
+                                    error!("Failed to remove file: {:?} - {:?}", path, e);
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to run file cleanup job: {e:?}");
+            }
+        }
+        info!("File cleanup task completed. Removed: {} files.", removed);
         tokio::time::sleep(sleep_duration).await;
     }
 }
