@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+set -x
 if [ ! -f .env ]; then
   echo ".env file is missing!"
   exit 1
@@ -20,5 +22,3 @@ mv output.log output.log-$(date -u +%s)
 mv septa septa-$(date -u +%s)
 cp septa-new septa
 ./septa >> output.log 2>&1 & disown
-
-
