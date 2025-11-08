@@ -35,6 +35,7 @@ pub async fn start(state: SharedAppState) -> anyhow::Result<(JoinHandle<()>, Joi
     });
     Ok((poll_handle, processer_handle))
 }
+
 pub async fn ensure_directories_created() {
     match tokio::fs::create_dir(FILES_OUTPUT_DIR).await {
         Ok(_) => {
@@ -49,6 +50,7 @@ pub async fn ensure_directories_created() {
     }
     .expect("Unable to create output directory");
 }
+
 pub async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>) {
     while let Some(mut content) = recv.recv().await {
         let incomming_len = content.trains.len();
@@ -145,6 +147,7 @@ pub async fn poll_for_train_view(state: SharedAppState, interval: u64, sender: S
         tokio::time::sleep(sleep_duration).await;
     }
 }
+
 pub async fn schedule_file_cleanup_job() {
     let sleep_duration = Duration::from_secs(60 * 60); // 1 Hour
     info!(
@@ -158,23 +161,26 @@ pub async fn schedule_file_cleanup_job() {
         match fs::read_dir(FILES_OUTPUT_DIR).await {
             Ok(mut files) => {
                 while let Ok(Some(file)) = files.next_entry().await {
-                    if let Ok(btime) = file.metadata().await.and_then(|meta| meta.created()) {
-                        let created_time = chrono::DateTime::<Local>::from(btime);
-                        if created_time < last_week {
-                            removed += 1;
-                            let path = file.path().clone();
-                            tokio::spawn(async move {
-                                if let Err(e) = fs::remove_file(&path).await {
-                                    error!("Failed to remove file: {:?} - {:?}", path, e);
-                                }
-                            });
+                    match file.metadata().await.and_then(|meta| meta.modified()) {
+                        Ok(btime) => {
+                            let created_time = chrono::DateTime::<Local>::from(btime);
+                            if created_time < last_week {
+                                removed += 1;
+                                let path = file.path().clone();
+                                tokio::spawn(async move {
+                                    if let Err(e) = fs::remove_file(&path).await {
+                                        error!("Failed to remove file: {:?} - {:?}", path, e);
+                                    }
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to get the metadata for file: {:?} - {:?}", file, e);
                         }
                     }
                 }
             }
-            Err(e) => {
-                error!("Failed to run file cleanup job: {e:?}");
-            }
+            Err(e) => error!("Error reading directory: {e:?}"),
         }
         info!("File cleanup task completed. Removed: {} files.", removed);
         tokio::time::sleep(sleep_duration).await;
