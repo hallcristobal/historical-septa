@@ -18,6 +18,10 @@ else
   echo "PID $PID has terminated."
 fi
 
+# Always run pending migrations on deploy
+./migrator | tee -a migrator.log
+
+# Backup currents before starting new
 mv output.log output.log-$(date -u +%s)
 mv septa septa-$(date -u +%s)
 cp septa-new septa
