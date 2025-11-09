@@ -25,4 +25,4 @@ fi
 mv output.log output.log-$(date -u +%s)
 mv septa septa-$(date -u +%s)
 cp septa-new septa
-./septa >> output.log 2>&1 & disown
+nohup ./septa >> output.log 2>&1 &
