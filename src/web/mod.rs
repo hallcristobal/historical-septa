@@ -84,20 +84,16 @@ async fn current_trains(
         .iter()
         .filter_map(|tv| {
             if let Some(ref mri) = tv.1.most_recent_item {
-                if let Some(line) = line {
-                    if *line != mri.line {
-                        return None;
-                    }
+                if let Some(line) = line
+                    && *line != mri.line
+                {
+                    return None;
                 }
 
-                if all {
+                if all || mri.timestamp > two_am_today {
                     Some(mri.clone())
                 } else {
-                    if mri.timestamp > two_am_today {
-                        Some(mri.clone())
-                    } else {
-                        None
-                    }
+                    None
                 }
             } else {
                 None
@@ -142,9 +138,9 @@ async fn most_recent_changes(data: web::Data<SharedAppState>) -> impl Responder 
                 let relevant_changes: Vec<Changed> = changes
                     .iter()
                     .filter(|c| c.changed_at >= until)
-                    .map(|c| c.clone())
+                    .cloned()
                     .collect();
-                if relevant_changes.len() > 0 {
+                if !relevant_changes.is_empty() {
                     Some(Change {
                         trainno: tv.0.clone(),
                         changes: relevant_changes.clone(),

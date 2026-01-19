@@ -28,11 +28,6 @@ pub async fn fetch_train_view() -> anyhow::Result<Content, FailedFetchError> {
         })
         .unwrap_or(chrono::Utc::now());
 
-    // match response.text().await {
-    //     Ok(raw) => match serde_json::from_str::<Vec<TrainView>>(&raw) {
-    //         Ok(body) => {}
-    //     },
-    // }
     match response
         .text()
         .await
@@ -47,6 +42,6 @@ pub async fn fetch_train_view() -> anyhow::Result<Content, FailedFetchError> {
             raw,
             trains: body,
         }),
-        Err(e) => Err(FailedFetchError(date, e).into()),
+        Err(e) => Err(FailedFetchError(date, e)),
     }
 }

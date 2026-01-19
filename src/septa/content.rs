@@ -44,7 +44,6 @@ impl Content {
                     }
                     Err(err) => {
                         error!("Failed to write file to file system: {:?}", err);
-                        return;
                     }
                 };
             });

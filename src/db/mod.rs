@@ -14,8 +14,8 @@ pub async fn init() -> anyhow::Result<PgPool> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum QueryOrdering {
-    ASC,
-    DESC,
+    Asc,
+    Desc,
 }
 
 #[derive(Debug)]
@@ -31,8 +31,8 @@ impl<'a> TryFrom<&'a str> for QueryOrdering {
     type Error = DecodeQueryOrderingError;
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         match &*(value.to_uppercase()) {
-            "ASC" => Ok(QueryOrdering::ASC),
-            "DESC" => Ok(QueryOrdering::DESC),
+            "ASC" => Ok(QueryOrdering::Asc),
+            "DESC" => Ok(QueryOrdering::Desc),
             _ => Err(DecodeQueryOrderingError),
         }
     }
@@ -54,8 +54,8 @@ impl std::fmt::Display for QueryOrdering {
             f,
             "{}",
             match self {
-                QueryOrdering::ASC => "ASC",
-                QueryOrdering::DESC => "DESC",
+                QueryOrdering::Asc => "ASC",
+                QueryOrdering::Desc => "DESC",
             }
         )
     }

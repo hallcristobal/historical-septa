@@ -15,7 +15,7 @@ use crate::{
     septa::train_view::TrainView,
 };
 
-pub const FILES_OUTPUT_DIR: &'static str = "./files";
+pub const FILES_OUTPUT_DIR: &str = "./files";
 pub const POLL_INTERVAL: u64 = 5;
 
 pub async fn start(state: SharedAppState) -> anyhow::Result<(JoinHandle<()>, JoinHandle<()>)> {
@@ -59,20 +59,16 @@ pub async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>)
             content.trains.retain(|tv| {
                 if let Some(existing) = statuses.get(&tv.trainno) {
                     if let Some(ref mri) = existing.most_recent_item {
-                        if **mri != *tv {
-                            return true;
-                        } else {
-                            return false;
-                        }
+                        return **mri != *tv;
                     } else {
                         return false;
                     }
                 }
-                return true;
+                true
             });
         }
 
-        if content.trains.len() == 0 {
+        if content.trains.is_empty() {
             // TODO: Should i drop the file if there's no "changed" trains, should i keep it but
             // just not keep a record?
             info!("File is not changed.");
@@ -91,7 +87,6 @@ pub async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>)
         {
             let state = state.clone();
             let content = content.clone();
-            let file_id = file_id.clone();
             tokio::spawn(async move {
                 match content
                     .commit_file(file_id, state.read().await.pg_pool.clone())
@@ -131,13 +126,12 @@ pub async fn poll_for_train_view(state: SharedAppState, interval: u64, sender: S
     let sleep_duration = Duration::from_secs(interval);
     loop {
         match api::fetch_train_view().await {
-            Ok(content) => match sender.send(content).await {
-                Err(e) => {
+            Ok(content) => {
+                if let Err(e) = sender.send(content).await {
                     error!("Sender failed: {e:?}");
                     break;
                 }
-                _ => {}
-            },
+            }
             Err(e) => {
                 let _ = Fetch::new(e.0, "FETCH_ERROR".to_string(), Some(e.1))
                     .store_fetch(state.read().await.pg_pool.clone())
@@ -194,7 +188,7 @@ fn process_train_views(
 ) -> usize {
     let mut updated = 0;
     train_views.into_iter().for_each(|mut train_view| {
-        train_view.timestamp = timestamp.clone();
+        train_view.timestamp = *timestamp;
         if !train_statuses.contains_key(&train_view.trainno) {
             train_statuses.insert(train_view.trainno.to_owned(), Tracking::default());
         }
@@ -202,14 +196,13 @@ fn process_train_views(
         let train_view = Arc::new(train_view);
         if *timestamp > views.most_recent_timestamp {
             if let Some(ref most_recent) = views.most_recent_item {
-                let changes = train_view.get_changes(&most_recent);
+                let changes = train_view.get_changes(most_recent);
                 views.latest_changes = changes;
                 updated += 1;
             }
             views.most_recent_timestamp = *timestamp;
             views.most_recent_item = Some(train_view.clone());
         }
-        // views.items.push(train_view);
     });
     updated
 }

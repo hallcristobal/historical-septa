@@ -104,7 +104,7 @@ impl TrainView {
             changed
         );
 
-        if changed.len() > 0 {
+        if !changed.is_empty() {
             Some(changed)
         } else {
             None
@@ -150,10 +150,7 @@ order by
         .map(|row| TrainView {
             id: row.id,
             file_id: row.file_id,
-            timestamp: row
-                .received_at
-                .and_then(|r| Some(r.and_utc()))
-                .unwrap_or_default(),
+            timestamp: row.received_at.map(|r| r.and_utc()).unwrap_or_default(),
             trainno: row.trainno.clone(),
             service: row.service.clone(),
             dest: row.dest.clone(),
@@ -161,7 +158,7 @@ order by
             nextstop: row.nextstop.clone(),
             line: row.line.clone(),
             consist: row.consist.clone(),
-            late: row.late.clone(),
+            late: row.late,
             source: row.source.clone(),
         })
         .collect();
@@ -219,7 +216,7 @@ from
         // alredy throw an error if it's the incorrect of the two options anywa...
         builder.push(format!(
             " ORDER BY received_at {}",
-            order.unwrap_or(QueryOrdering::DESC)
+            order.unwrap_or(QueryOrdering::Desc)
         ));
         builder.push(" LIMIT ");
         builder.push_bind(enforce_limit_bounds(limit));
@@ -296,7 +293,7 @@ from
 
         builder.push(format!(
             " ORDER BY received_at {}",
-            order.unwrap_or(QueryOrdering::DESC)
+            order.unwrap_or(QueryOrdering::Desc)
         ));
         builder.push(" LIMIT ");
 
@@ -351,7 +348,7 @@ VALUES
     }
 
     pub async fn commit_new_records(
-        records: &Vec<TrainView>,
+        records: &[TrainView],
         file: &File,
         pg_pool: PgPool,
     ) -> anyhow::Result<u64> {
@@ -360,8 +357,8 @@ VALUES
     (id, file_id, received_at, trainno, service, dest, currentstop, nextstop, line, consist, late, source) ",
         );
         builder.push_values(records.iter(), |mut a, record| {
-            a.push_bind(&record.id)
-                .push_bind(&file.id)
+            a.push_bind(record.id)
+                .push_bind(file.id)
                 .push_bind(file.received_at.naive_utc())
                 .push_bind(&record.trainno)
                 .push_bind(&record.service)
@@ -370,7 +367,7 @@ VALUES
                 .push_bind(&record.nextstop)
                 .push_bind(&record.line)
                 .push_bind(&record.consist)
-                .push_bind(&record.late)
+                .push_bind(record.late)
                 .push_bind(&record.source);
         });
         let inserted = builder.build().execute(&pg_pool).await?;
@@ -381,11 +378,5 @@ VALUES
 /// Enforces the following restriction on passed limit option: `[1, 300]`
 pub fn enforce_limit_bounds(limit: Option<i64>) -> i64 {
     let limit = limit.unwrap_or(100);
-    if limit > 300 {
-        300
-    } else if limit < 1 {
-        1
-    } else {
-        limit
-    }
+    limit.clamp(1, 300)
 }

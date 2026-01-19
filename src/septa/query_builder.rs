@@ -2,7 +2,7 @@
 use serde::Deserialize;
 use uuid::Uuid;
 
-const DEFAULT_RESPONSE_FIELDS: [&'static str; 12] = [
+const DEFAULT_RESPONSE_FIELDS: [&str; 12] = [
     "records.id",
     "file_id",
     "trainno",
