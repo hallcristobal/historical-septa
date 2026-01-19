@@ -3,3 +3,4 @@
 *.dump
 files/
 .sqlx/
+.env*

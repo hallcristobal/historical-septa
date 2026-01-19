@@ -50,7 +50,6 @@ pub struct Changed {
 pub struct Tracking<T> {
     pub most_recent_timestamp: DateTime<Utc>,
     pub most_recent_item: Option<Arc<T>>,
-    // pub items: Vec<Arc<T>>,
     pub latest_changes: Option<Vec<Changed>>,
 }
 
@@ -59,7 +58,6 @@ impl<T> Default for Tracking<T> {
         Tracking {
             most_recent_timestamp: Utc.timestamp_opt(0, 0).unwrap(),
             most_recent_item: None,
-            // items: Vec::new(),
             latest_changes: None,
         }
     }
