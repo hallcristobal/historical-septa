@@ -3,7 +3,7 @@ extern crate log;
 
 use crate::process::processing::{self, AppState};
 use septa::{
-    queuing::prelude::{Opts, Queue},
+    queuing::prelude::{Opts, Queue, GenericQueue},
     septa::content::Content,
 };
 use std::sync::Arc;
@@ -26,7 +26,6 @@ async fn main() -> anyhow::Result<()> {
 
     let (file_sender, file_receiver) = tokio::sync::mpsc::channel(100);
 
-    rabbit_queue.connect().await.unwrap();
     rabbit_queue.ensure_queue("process_file").await.unwrap();
     let handle = processing::start(app_state, file_receiver)
         .await

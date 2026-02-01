@@ -2,7 +2,7 @@
 extern crate log;
 
 use septa::{
-    queuing::prelude::{Opts, Queue},
+    queuing::prelude::{Opts, Queue, GenericQueue},
     septa::content::Content,
 };
 use std::time::Duration;
@@ -18,7 +18,6 @@ async fn main() -> anyhow::Result<()> {
     let mut rabbit_queue = Queue::new(&Opts::new("localhost", 5672, "guest", "guest"))
         .await
         .unwrap();
-    rabbit_queue.connect().await.unwrap();
     rabbit_queue.ensure_exchange("process_file").await.unwrap();
 
     let (file_sender, file_receiver) = tokio::sync::mpsc::channel(10);
