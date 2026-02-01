@@ -11,8 +11,8 @@ use crate::{
     septa::content::File,
 };
 
-#[derive(Debug, Serialize, Deserialize, Clone, Eq)]
-pub struct TrainView {
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub struct SeptaTrainView {
     #[serde(skip_deserializing, default = "Uuid::new_v4")]
     pub id: Uuid,
     #[serde(skip_deserializing, default)]
@@ -43,6 +43,45 @@ pub struct TrainView {
     // pub track: String,
     // #[serde(rename = "TRACK_CHANGE")]
     // pub track_change: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Eq)]
+pub struct TrainView {
+    pub id: Uuid,
+    pub file_id: Uuid,
+    #[serde(
+        deserialize_with = "crate::serde_utils::deserialize_date_time_utc",
+        serialize_with = "crate::serde_utils::serialize_date_time"
+    )]
+    pub timestamp: chrono::DateTime<Utc>,
+    pub trainno: String,
+    pub service: String,
+    pub dest: String,
+    pub currentstop: String,
+    pub nextstop: String,
+    pub line: String,
+    pub consist: String,
+    pub late: i32,
+    pub source: String,
+}
+
+impl From<SeptaTrainView> for TrainView {
+    fn from(value: SeptaTrainView) -> Self {
+        TrainView {
+            id: value.id,
+            file_id: value.file_id,
+            timestamp: value.timestamp,
+            trainno: value.trainno,
+            service: value.service,
+            dest: value.dest,
+            currentstop: value.currentstop,
+            nextstop: value.nextstop,
+            line: value.line,
+            consist: value.consist,
+            late: value.late,
+            source: value.source,
+        }
+    }
 }
 
 impl PartialEq for TrainView {

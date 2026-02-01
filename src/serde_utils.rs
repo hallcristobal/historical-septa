@@ -1,4 +1,4 @@
-use chrono::TimeZone;
+use chrono::{TimeZone, Utc};
 use serde::Deserialize;
 
 #[allow(unused)]
@@ -34,4 +34,12 @@ where
     S: serde::Serializer,
 {
     serializer.serialize_i64(val.timestamp())
+}
+
+pub fn deserialize_date_time_utc<'de, D>(deserializer: D) -> Result<chrono::DateTime<Utc>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: i64 = Deserialize::deserialize(deserializer)?;
+    Ok(chrono::DateTime::from_timestamp_millis(s).unwrap())
 }

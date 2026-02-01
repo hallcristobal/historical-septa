@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
@@ -6,9 +7,13 @@ use uuid::Uuid;
 use super::FILES_OUTPUT_DIR;
 use crate::septa::{train_view::TrainView};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Content {
     pub id: Uuid,
+    #[serde(
+        deserialize_with = "crate::serde_utils::deserialize_date_time_utc",
+        serialize_with = "crate::serde_utils::serialize_date_time"
+    )]
     pub timestamp: DateTime<Utc>,
     pub raw: String,
     pub trains: Vec<TrainView>,

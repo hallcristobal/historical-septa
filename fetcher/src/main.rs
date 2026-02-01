@@ -1,7 +1,10 @@
 #[macro_use]
 extern crate log;
 
-use septa::septa::content::Content;
+use septa::{
+    queuing::prelude::{Opts, Queue},
+    septa::content::Content,
+};
 use std::time::Duration;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -12,6 +15,11 @@ async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().unwrap();
     pretty_env_logger::init_timed();
     info!("Starting Septa processes");
+    let mut rabbit_queue = Queue::new(&Opts::new("localhost", 5672, "guest", "guest"))
+        .await
+        .unwrap();
+    rabbit_queue.connect().await.unwrap();
+    rabbit_queue.ensure_exchange("process_file").await.unwrap();
 
     let (file_sender, file_receiver) = tokio::sync::mpsc::channel(10);
     let poll_handle = tokio::spawn(async move {
@@ -19,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let processer_handle = tokio::spawn(async move {
-        let _ = forward_file(file_receiver).await;
+        let _ = forward_file(rabbit_queue, file_receiver).await;
     });
 
     poll_handle.await.unwrap();
@@ -50,10 +58,11 @@ pub async fn poll_for_train_view(interval: u64, sender: Sender<Content>) {
     }
 }
 
-pub async fn forward_file(mut receiver: Receiver<Content>) {
+pub async fn forward_file(mut queue: Queue, mut receiver: Receiver<Content>) {
     while let Some(content) = receiver.recv().await {
         debug!("Received file for processing: {:?}", content.id);
         let incomming_len = content.trains.len();
         debug!("File has {} trains listed.", incomming_len);
+        queue.send("process_file", content).await.unwrap();
     }
 }

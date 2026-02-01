@@ -34,3 +34,5 @@ tokio = { workspace = true }
 env_logger = { workspace = true }
 pretty_env_logger = { workspace = true }
 log = { workspace = true }
+async-trait = "0.1.89"
+amqprs = { workspace = true }
