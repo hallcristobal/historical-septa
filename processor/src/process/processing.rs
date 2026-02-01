@@ -9,13 +9,11 @@ use tokio::{
 };
 
 use crate::{
-    SharedAppState,
     db::tracking::{Fetch, Tracking},
     septa::content::Content,
     septa::train_view::TrainView,
 };
 
-pub const FILES_OUTPUT_DIR: &str = "./files";
 pub const POLL_INTERVAL: u64 = 5;
 
 pub async fn start(state: SharedAppState) -> anyhow::Result<(JoinHandle<()>, JoinHandle<()>)> {
@@ -206,3 +204,4 @@ fn process_train_views(
     });
     updated
 }
+

@@ -3,7 +3,8 @@ use sqlx::PgPool;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use crate::septa::{processing::FILES_OUTPUT_DIR, train_view::TrainView};
+use super::FILES_OUTPUT_DIR;
+use crate::septa::{train_view::TrainView};
 
 #[derive(Debug, Clone)]
 pub struct Content {
