@@ -8,6 +8,7 @@ use crate::septa::{train_view::TrainView};
 
 #[derive(Debug, Clone)]
 pub struct Content {
+    pub id: Uuid,
     pub timestamp: DateTime<Utc>,
     pub raw: String,
     pub trains: Vec<TrainView>,
@@ -19,13 +20,13 @@ pub struct File {
 }
 
 impl Content {
-    pub async fn commit_file(&self, id: Uuid, pg_pool: PgPool) -> anyhow::Result<File> {
+    pub async fn commit_file(&self, id: Uuid, pg_pool: &PgPool) -> anyhow::Result<File> {
         sqlx::query!(
             "INSERT INTO files (id, received_at) VALUES ($1, $2)",
             id,
             self.timestamp.naive_utc(),
         )
-        .execute(&pg_pool)
+        .execute(pg_pool)
         .await?;
 
         {

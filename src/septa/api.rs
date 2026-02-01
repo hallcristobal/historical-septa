@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use chrono::{DateTime, Utc};
 use reqwest;
+use uuid::Uuid;
 
 use crate::{
     db::tracking::FailedFetchError, septa::content::Content, septa::train_view::TrainView,
@@ -38,6 +39,7 @@ pub async fn fetch_train_view() -> anyhow::Result<Content, FailedFetchError> {
                 .map_err(err_to_string)
         }) {
         Ok((raw, body)) => Ok(Content {
+            id: Uuid::new_v4(),
             timestamp: date,
             raw,
             trains: body,

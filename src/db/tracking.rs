@@ -82,7 +82,7 @@ impl Fetch {
         }
     }
 
-    pub async fn store_fetch(&self, pg_pool: PgPool) -> anyhow::Result<()> {
+    pub async fn store_fetch(&self, pg_pool: &PgPool) -> anyhow::Result<()> {
         sqlx::query!(
             "INSERT INTO fetches (id, timestamp, status, result) VALUES ($1, $2, $3, $4)",
             self.id,
@@ -90,7 +90,7 @@ impl Fetch {
             self.status,
             self.result
         )
-        .execute(&pg_pool)
+        .execute(pg_pool)
         .await?;
         Ok(())
     }

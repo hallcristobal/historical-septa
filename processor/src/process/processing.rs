@@ -1,29 +1,37 @@
-use super::api;
 use chrono::{DateTime, Days, Local, Utc};
 use serde_json::json;
+use sqlx::PgPool;
 use std::{collections::HashMap, io::ErrorKind, sync::Arc, time::Duration};
-use tokio::{
-    fs,
-    sync::mpsc::{Receiver, Sender},
-    task::JoinHandle,
-};
+use tokio::{fs, sync::Mutex, sync::mpsc::Receiver, task::JoinHandle};
 
-use crate::{
+use septa::{
     db::tracking::{Fetch, Tracking},
+    septa::FILES_OUTPUT_DIR,
     septa::content::Content,
     septa::train_view::TrainView,
 };
 
-pub const POLL_INTERVAL: u64 = 5;
+pub struct AppState {
+    train_statuses: Mutex<HashMap<String, Tracking<TrainView>>>,
+    db_pool: PgPool,
+}
 
-pub async fn start(state: SharedAppState) -> anyhow::Result<(JoinHandle<()>, JoinHandle<()>)> {
-    let state_handle = state.clone();
-    let (file_sender, file_receiver) = tokio::sync::mpsc::channel(1);
+impl AppState {
+    pub fn new(db_pool: PgPool) -> Self {
+        AppState {
+            train_statuses: Mutex::new(HashMap::new()),
+            db_pool,
+        }
+    }
+}
+
+type SharedAppState = Arc<AppState>;
+
+pub async fn start(
+    state: SharedAppState,
+    file_receiver: Receiver<Content>,
+) -> anyhow::Result<JoinHandle<()>> {
     ensure_directories_created().await;
-    let poll_handle = tokio::spawn(async move {
-        let _ = poll_for_train_view(state_handle, POLL_INTERVAL, file_sender).await;
-    });
-
     let state_handle = state.clone();
     let processer_handle = tokio::spawn(async move {
         let _ = accept_new_file(state_handle, file_receiver).await;
@@ -31,7 +39,7 @@ pub async fn start(state: SharedAppState) -> anyhow::Result<(JoinHandle<()>, Joi
     let _output_dir_watchdog = tokio::spawn(async move {
         let _ = schedule_file_cleanup_job().await;
     });
-    Ok((poll_handle, processer_handle))
+    Ok(processer_handle)
 }
 
 pub async fn ensure_directories_created() {
@@ -53,7 +61,7 @@ pub async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>)
     while let Some(mut content) = recv.recv().await {
         let incomming_len = content.trains.len();
         {
-            let statuses = &state.read().await.train_statuses;
+            let statuses = &state.train_statuses.lock().await;
             content.trains.retain(|tv| {
                 if let Some(existing) = statuses.get(&tv.trainno) {
                     if let Some(ref mri) = existing.most_recent_item {
@@ -71,7 +79,7 @@ pub async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>)
             // just not keep a record?
             info!("File is not changed.");
             let _ = Fetch::new(content.timestamp, "UNCHANGED".to_string(), None)
-                .store_fetch(state.read().await.pg_pool.clone())
+                .store_fetch(&state.db_pool)
                 .await;
             continue;
         }
@@ -81,15 +89,12 @@ pub async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>)
             incomming_len
         );
 
-        let file_id = uuid::Uuid::new_v4();
+        let file_id = content.id;
         {
             let state = state.clone();
             let content = content.clone();
             tokio::spawn(async move {
-                match content
-                    .commit_file(file_id, state.read().await.pg_pool.clone())
-                    .await
-                {
+                match content.commit_file(file_id, &state.db_pool).await {
                     Ok(_) => {}
                     Err(err) => {
                         error!("Failed to execute commit_file: {:?}", err);
@@ -106,7 +111,7 @@ pub async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>)
         let updated = process_train_views(
             content.trains,
             &content.timestamp,
-            &mut state.write().await.train_statuses,
+            &mut *state.train_statuses.lock().await,
         );
         let result = json!({
             "updated": updated,
@@ -114,29 +119,9 @@ pub async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>)
         })
         .to_string();
         let _ = Fetch::new(content.timestamp, "OK".to_string(), Some(result))
-            .store_fetch(state.read().await.pg_pool.clone())
+            .store_fetch(&state.db_pool)
             .await;
         info!("Processed {len} updates. Wrote {updated}.");
-    }
-}
-
-pub async fn poll_for_train_view(state: SharedAppState, interval: u64, sender: Sender<Content>) {
-    let sleep_duration = Duration::from_secs(interval);
-    loop {
-        match api::fetch_train_view().await {
-            Ok(content) => {
-                if let Err(e) = sender.send(content).await {
-                    error!("Sender failed: {e:?}");
-                    break;
-                }
-            }
-            Err(e) => {
-                let _ = Fetch::new(e.0, "FETCH_ERROR".to_string(), Some(e.1))
-                    .store_fetch(state.read().await.pg_pool.clone())
-                    .await;
-            }
-        }
-        tokio::time::sleep(sleep_duration).await;
     }
 }
 
@@ -204,4 +189,3 @@ fn process_train_views(
     });
     updated
 }
-

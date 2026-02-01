@@ -1,36 +1,59 @@
 #[macro_use]
 extern crate log;
 
-use actix_web::{App, HttpServer};
-use sqlx::PgPool;
-use std::{collections::HashMap, env, sync::Arc};
-use tokio::sync::RwLock;
+use septa::septa::content::Content;
+use std::time::Duration;
+use tokio::sync::mpsc::{Receiver, Sender};
 
-use septa::{db::tracking::Tracking, septa::train_view::TrainView};
-
-struct AppState {
-    train_statuses: HashMap<String, Tracking<TrainView>>,
-    pg_pool: PgPool,
-}
-type SharedAppState = Arc<RwLock<AppState>>;
+pub const POLL_INTERVAL: u64 = 5;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().unwrap();
     pretty_env_logger::init_timed();
-    let fetch_and_process_septa = !env::var("NO_FETCH").map(|v| v == "true").unwrap_or(false);
+    info!("Starting Septa processes");
 
-    if fetch_and_process_septa {
-        info!("Starting Septa processes");
-        match septa::processing::start(state.clone()).await {
-            Ok((poll_handle, process_handle)) => {
-                debug!("Started threads: {:?} {:?}", poll_handle, process_handle);
+    let (file_sender, file_receiver) = tokio::sync::mpsc::channel(10);
+    let poll_handle = tokio::spawn(async move {
+        let _ = poll_for_train_view(POLL_INTERVAL, file_sender).await;
+    });
+
+    let processer_handle = tokio::spawn(async move {
+        let _ = forward_file(file_receiver).await;
+    });
+
+    poll_handle.await.unwrap();
+    processer_handle.await.unwrap();
+
+    Ok(())
+}
+
+pub async fn poll_for_train_view(interval: u64, sender: Sender<Content>) {
+    let sleep_duration = Duration::from_secs(interval);
+    loop {
+        match septa::septa::api::fetch_train_view().await {
+            Ok(content) => {
+                if let Err(e) = sender.send(content).await {
+                    error!("Sender failed: {e:?}");
+                    break;
+                }
             }
             Err(e) => {
-                error!("Error starting septa threads: {e:?}");
-                return Err(e);
+                error!("Failed to fetch file: {:?}", e);
+                todo!("On fetch error, save error to db.")
+                // let _ = Fetch::new(e.0, "FETCH_ERROR".to_string(), Some(e.1))
+                //     .store_fetch(state.read().await.pg_pool.clone())
+                //     .await;
             }
         }
+        tokio::time::sleep(sleep_duration).await;
     }
-    Ok(())
+}
+
+pub async fn forward_file(mut receiver: Receiver<Content>) {
+    while let Some(content) = receiver.recv().await {
+        debug!("Received file for processing: {:?}", content.id);
+        let incomming_len = content.trains.len();
+        debug!("File has {} trains listed.", incomming_len);
+    }
 }

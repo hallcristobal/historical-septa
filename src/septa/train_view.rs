@@ -323,7 +323,7 @@ from
     }
 
     #[allow(unused)]
-    pub async fn commit_new_record(&self, file: &File, pg_pool: PgPool) -> anyhow::Result<()> {
+    pub async fn commit_new_record(&self, file: &File, pg_pool: &PgPool) -> anyhow::Result<()> {
         sqlx::query!(
             r" INSERT INTO records 
     (id, file_id, received_at, trainno, service, dest, currentstop, nextstop, line, consist, late, source)
@@ -342,7 +342,7 @@ VALUES
             self.late,
             self.source,
         )
-        .execute(&pg_pool)
+        .execute(pg_pool)
         .await?;
         Ok(())
     }
@@ -350,7 +350,7 @@ VALUES
     pub async fn commit_new_records(
         records: &[TrainView],
         file: &File,
-        pg_pool: PgPool,
+        pg_pool: &PgPool,
     ) -> anyhow::Result<u64> {
         let mut builder = sqlx::QueryBuilder::new(
             r" INSERT INTO records 
@@ -370,7 +370,7 @@ VALUES
                 .push_bind(record.late)
                 .push_bind(&record.source);
         });
-        let inserted = builder.build().execute(&pg_pool).await?;
+        let inserted = builder.build().execute(pg_pool).await?;
         Ok(inserted.rows_affected())
     }
 }
