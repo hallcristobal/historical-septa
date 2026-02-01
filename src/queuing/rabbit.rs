@@ -70,7 +70,11 @@ impl RabbitQueue {
 
         let channel = self.channel.as_ref().unwrap();
         let (queue_name, _, _) = channel
-            .queue_declare(QueueDeclareArguments::new(&queue_name))
+            .queue_declare(
+                QueueDeclareArguments::new(&queue_name)
+                    .auto_delete(false)
+                    .finish(),
+            )
             .await
             .unwrap()
             .unwrap();
@@ -105,6 +109,7 @@ impl RabbitQueue {
             .exchange_declare(
                 ExchangeDeclareArguments::new(&exchange_name, "fanout")
                     .durable(false)
+                    .auto_delete(false)
                     .finish(),
             )
             .await
@@ -139,7 +144,10 @@ impl RabbitQueue {
                 match consume(content).await {
                     Ok(_) => {
                         channel
-                            .basic_ack(BasicAckArguments::new(message.deliver.unwrap().delivery_tag(), false))
+                            .basic_ack(BasicAckArguments::new(
+                                message.deliver.unwrap().delivery_tag(),
+                                false,
+                            ))
                             .await
                             .unwrap();
                     }
