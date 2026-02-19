@@ -60,17 +60,17 @@ pub async fn ensure_directories_created() {
 pub async fn accept_new_file(state: SharedAppState, mut recv: Receiver<Content>) {
     while let Some(mut content) = recv.recv().await {
         let incomming_len = content.trains.len();
-        {
-            let statuses = &state.train_statuses.lock().await;
+        if let Ok(most_recent_trains) = TrainView::get_most_recent_all(&state.db_pool).await {
+            let most_recent_trains: HashMap<&String, &TrainView> = most_recent_trains
+                .iter()
+                .map(|tv| (&tv.trainno, tv))
+                .collect();
             content.trains.retain(|tv| {
-                if let Some(existing) = statuses.get(&tv.trainno) {
-                    if let Some(ref mri) = existing.most_recent_item {
-                        return **mri != *tv;
-                    } else {
-                        return false;
-                    }
+                if let Some(mri) = most_recent_trains.get(&tv.trainno) {
+                    **mri != *tv
+                } else {
+                    true
                 }
-                true
             });
         }
 

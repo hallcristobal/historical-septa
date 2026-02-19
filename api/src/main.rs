@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn populate_known_statuses(state: SharedAppState) -> anyhow::Result<usize> {
-    let train_views = TrainView::get_most_recent_all(state.read().await.pg_pool.clone()).await?;
+    let train_views = TrainView::get_most_recent_all(&state.read().await.pg_pool.clone()).await?;
     let train_statuses = &mut state.write().await.train_statuses;
     train_views.iter().for_each(|train_view| {
         train_statuses.insert(

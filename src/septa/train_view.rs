@@ -151,7 +151,7 @@ impl TrainView {
     }
 
     /// Database
-    pub async fn get_most_recent_all(pool: PgPool) -> anyhow::Result<Vec<TrainView>> {
+    pub async fn get_most_recent_all(pool: &PgPool) -> anyhow::Result<Vec<TrainView>> {
         let yesterday = chrono::Local::now() - Duration::days(1);
         let two_am_yesterday = yesterday
             .with_time(chrono::NaiveTime::from_hms_opt(2, 0, 0).unwrap())
@@ -183,7 +183,7 @@ order by
 ",
             two_am_yesterday.naive_utc()
         )
-        .fetch_all(&pool)
+        .fetch_all(pool)
         .await?
         .iter()
         .map(|row| TrainView {
@@ -203,6 +203,7 @@ order by
         .collect();
         Ok(records)
     }
+
     pub async fn fetch_for_train(
         pool: PgPool,
         trainno: &str,
