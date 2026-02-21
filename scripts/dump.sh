@@ -10,6 +10,6 @@ export PGPASSWORD="${DATABASE_PASS}"
 
 set -x
 pg_dump -h ${DATABASE_HOST} -p ${DATABASE_PORT} \
-  -U ${DATABASE_USER} -d ${DATABASE_NAME} -Fc -fx "$(date -u +%s)-dev.dump"
+  -U ${DATABASE_USER} -d ${DATABASE_NAME} -Fc -x -f "$(date -u +%s)-dev.dump"
 
 
