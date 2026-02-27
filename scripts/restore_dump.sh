@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
-set -ex
+if [ ! -f .env ]; then
+  echo ".env file is missing!"
+  exit 1
+fi
 
-echo "drop database historical_septa_dev; create database historical_septa_dev;" | psql -h localhost postgres
-pg_restore --no-privileges --no-owner -h localhost -U $USER -d historical_septa_dev -Fc *-dev.dump
+source .env
+export PGPASSWORD="${DATABASE_PASS}"
+
+set -x
+
+echo "drop database if exists ${DATABASE_NAME}; create database if not exists ${DATABASE_NAME};" | psql -h localhost postgres
+pg_restore --no-privileges --no-owner -h ${DATABASE_HOST} -p ${DATABASE_PORT} \
+  -U ${DATABASE_USER} -d ${DATABASE_NAME} -Fc *-dev.dump
