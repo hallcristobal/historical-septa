@@ -1,0 +1,21 @@
+[package]
+name = "lambda-get"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+septa = { path = ".." }
+actix = "0.13.5"
+actix-web = "4.11.0"
+chrono = "0.4.41"
+anyhow = { workspace = true }
+dotenvy = { workspace = true }
+# vendored because we need to cross compile!
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = { version = "1.0.143", features = ["raw_value"] }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+env_logger = { workspace = true }
+pretty_env_logger = { workspace = true }
+log = { workspace = true }
+futures = "0.3.31"

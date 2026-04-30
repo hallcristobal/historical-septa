@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": " INSERT INTO records \n    (id, file_id, received_at, trainno, service, dest, currentstop, nextstop, line, consist, late, source)\nVALUES\n    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamp",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "776c9f811d019de51d721945c5982f4b0976b1ab425a90d58df2c513ae93ec8c"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO files (id, received_at) VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamp"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1fe6c975e47d54f718c6fbf0df9220a4e0174ee7c34bf55029602d4e04b2a63d"
+}

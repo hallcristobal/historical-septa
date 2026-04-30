@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nselect \n  distinct on (trainno) \n  records.id,\n  file_id,\n  trainno,\n  service,\n  dest,\n  currentstop,\n  nextstop,\n  line,\n  consist,\n  late,\n  source,\n  received_at\nfrom \n     records \nwhere\n  received_at > $1\norder by \n    trainno, \n    received_at desc\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "file_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "trainno",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "service",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "dest",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "currentstop",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "nextstop",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "line",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "consist",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "late",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "source",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "received_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamp"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "2a6590742a0a5d0e0b3c7fe93e2bae1d8d6fad479c19e3131e7623469c14e87c"
+}

@@ -1527,6 +1527,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "lambda-get"
+version = "0.1.0"
+dependencies = [
+ "actix",
+ "actix-web",
+ "anyhow",
+ "chrono",
+ "dotenvy",
+ "env_logger 0.11.8",
+ "futures",
+ "log",
+ "pretty_env_logger",
+ "septa",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "language-tags"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

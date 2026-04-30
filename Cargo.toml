@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = ["api","fetcher","migrator", "processor"]
+members = ["api","fetcher", "lambda-get","migrator", "processor"]
 
 [workspace.dependencies]
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "postgres", "chrono", "uuid", "tls-rustls"] }
