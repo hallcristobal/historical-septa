@@ -2,6 +2,7 @@ import { Construct } from 'constructs';
 import * as cdk from 'aws-cdk-lib/core';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as elasticache from 'aws-cdk-lib/aws-elasticache';
 import { HttpApi, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import path from 'path';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
@@ -29,6 +30,12 @@ export class HistoricalSeptaStack extends cdk.Stack {
         "DATABASE_PASS": process.env["DATABASE_PASS"]!,
         "RUST_LOG": "DEBUG",
       }
+    })
+
+    const elasticache_instance = new elasticache.CfnReplicationGroup(this, 'historical_septa-Elasticache', {
+      engine: 'valkey',
+      engineVersion: '7.2',
+      cacheNodeType: 'cache.t4g.micro',
     })
 
     const lambda_Get_Integration = new HttpLambdaIntegration('lambda_get-integration', lambda_Get)
