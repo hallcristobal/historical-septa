@@ -7,7 +7,7 @@ use aws_sigv4::{
     http_request::{SignableBody, SignableRequest, SigningSettings, sign},
     sign::v4,
 };
-use lambda_runtime::{Error, LambdaEvent, run, service_fn};
+use lambda_http::{Body, Error, Request, Response, run, service_fn};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -18,7 +18,10 @@ use std::{env, sync::Arc};
 
 use septa::{
     db::tracking::Tracking,
-    septa::train_view::{TrainView, enforce_limit_bounds},
+    septa::{
+        query_builder::QueryBuilder,
+        train_view::{TrainView, enforce_limit_bounds},
+    },
 };
 
 use sqlx::{PgPool, postgres::PgConnectOptions};
@@ -35,23 +38,39 @@ async fn main() -> Result<(), Error> {
     run(service_fn(handler)).await
 }
 
-async fn handler(_evnet: LambdaEvent<Value>) -> Result<Value, Error> {
-    let db_host = env::var("DB_HOSTNAME").expect("DB_HOSTNAME must be set");
-    let db_port = env::var("DB_PORT")
-        .expect("DB_PORT must be set")
+async fn handler(_evnet: Request) -> Result<Response<Body>, Error> {
+    let db_host = env::var("DATABASE_HOST").expect("DB_HOSTNAME must be set");
+    let db_port = env::var("DATABASE_PORT")
+        .expect("DATABASE_PORT must be set")
         .parse::<u16>()
         .expect("PORT must be a valid number");
-    let db_name = env::var("DB_NAME").expect("DB_NAME must be set");
-    let db_user_name = env::var("DB_USERNAME").expect("DB_USERNAME must be set");
+    let db_pass = env::var("DATABASE_PASS").expect("DB_PASS must be set");
+    let db_name = env::var("DATABASE_NAME").expect("DB_NAME must be set");
+    let db_user_name = env::var("DATABASE_USER").expect("DB_USERNAME must be set");
 
     let state = AppState {
-        pg_pool: connect_db(&db_host, db_port, &db_user_name, &db_name).await?,
+        pg_pool: connect_db(&db_host, db_port, &db_user_name, &db_name, &db_pass).await?,
     };
     info!("Connected to database at: {:?}", state.pg_pool);
     let state = Arc::new(RwLock::new(state));
     let query = GetCurrentQuery::default();
 
-    current_trains(query, state).await
+    match current_trains(query, state).await {
+        Ok(res) => {
+            info!("Responding with result: {:?}", res);
+            let res = serde_json::to_string(&res).map_err(Box::new)?;
+            let res = Response::builder()
+                .status(200)
+                .header("content-type", "application/json")
+                .body(res.into())
+                .map_err(Box::new)?;
+            Ok(res)
+        }
+        Err(err) => {
+            error!("Error when querying: {:?}", err);
+            Err(err)
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -59,12 +78,6 @@ pub struct GetCurrentQuery {
     all: Option<bool>,
     line: Option<String>,
     limit: Option<i64>,
-}
-
-#[derive(Serialize)]
-struct Response {
-    count: u32,
-    statuses: Vec<Arc<TrainView>>,
 }
 
 async fn current_trains(query: GetCurrentQuery, data: SharedAppState) -> Result<Value, Error> {
@@ -97,10 +110,19 @@ async fn current_trains(query: GetCurrentQuery, data: SharedAppState) -> Result<
         })
         .take(count as usize)
         .collect::<Vec<Arc<TrainView>>>();
-    Ok(json!(Response {
+    debug!("Received response: {:?}", recent);
+
+    #[derive(Serialize)]
+    struct Response {
+        count: u32,
+        statuses: Vec<Arc<TrainView>>,
+    }
+
+    let response = json!(Response {
         count: recent.len() as u32,
         statuses: recent,
-    }))
+    });
+    Ok(response)
 }
 
 const RDS_CERTS: &[u8] = include_bytes!("global-bundle.pem");
@@ -110,17 +132,34 @@ async fn connect_db(
     db_port: u16,
     db_user_name: &str,
     db_name: &str,
+    db_pass: &str,
 ) -> Result<PgPool, Error> {
-    let token = generate_rds_iam_token(db_host, db_port, db_user_name).await?;
+    // let token = generate_rds_iam_token(db_host, db_port, db_user_name).await?;
+    debug!(
+        "Trying to connect to PgDatabase... {:?}",
+        env::var("DATABASE_URL")
+    );
+    // db::init().await.map_err(Error::from)
 
-    let opts = PgConnectOptions::new()
+    let mut opts = PgConnectOptions::new()
         .host(db_host)
         .port(db_port)
         .username(db_user_name)
-        .password(&token)
+        .password(db_pass)
         .database(db_name)
         .ssl_root_cert_from_pem(RDS_CERTS.to_vec())
-        .ssl_mode(sqlx::postgres::PgSslMode::Require);
+        .ssl_mode(sqlx::postgres::PgSslMode::VerifyFull);
+    if let Ok(local) = env::var("IS_LOCAL") {
+        info!("local variable found: {}", local);
+        if &local == "true" {
+            info!("Using local config!");
+            opts = opts
+                .ssl_root_cert_from_pem(vec![])
+                .ssl_mode(sqlx::postgres::PgSslMode::Require);
+        }
+    }
+
+    trace!("Trying to connect to PgDatabase... {}", opts.get_host());
 
     sqlx::postgres::PgPoolOptions::new()
         .connect_with(opts)
@@ -128,6 +167,7 @@ async fn connect_db(
         .map_err(Error::from)
 }
 
+#[allow(unused)]
 async fn generate_rds_iam_token(
     db_hostname: &str,
     port: u16,
@@ -178,7 +218,16 @@ async fn generate_rds_iam_token(
 async fn get_most_recents(
     state: SharedAppState,
 ) -> anyhow::Result<HashMap<String, Tracking<TrainView>>> {
-    let train_views = TrainView::get_most_recent_all(&state.read().await.pg_pool.clone()).await?;
+    let query = QueryBuilder::new().with_line("Lansdale/Doylestown".into());
+    let train_views = TrainView::query_trains(
+        state.read().await.pg_pool.clone(),
+        query,
+        Some(10),
+        None,
+        None,
+        None,
+    )
+    .await?;
     let mut train_statuses: HashMap<String, Tracking<TrainView>> = HashMap::new();
     train_views.iter().for_each(|train_view| {
         train_statuses.insert(
