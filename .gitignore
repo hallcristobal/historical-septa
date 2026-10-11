@@ -4,3 +4,4 @@
 files/
 .sqlx/
 .env*
+infra/
