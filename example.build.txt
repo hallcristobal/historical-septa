@@ -1,0 +1,107 @@
+Build { 
+  common: CommonOptions { 
+    quiet: false
+   jobs: None
+   keep_going: false
+   profile: None
+   features: []
+   all_features: false
+   no_default_features: false
+   target: ["x86_64-unknown-linux-gnu"]
+   target_dir: None
+   message_format: []
+   verbose: 1
+   color: Some("auto")
+   frozen: false
+   locked: false
+   offline: false
+   config: [
+     "profile.release.panic=\"abort\"" 
+     "profile.release.lto=\"thin\"" 
+     "profile.release.strip=\"symbols\"" 
+     "profile.release.codegen-units=1" 
+     "build.rustflags=[\"-C\" \"target-cpu=haswell\"]"
+   ]
+   unstable_flags: []
+   timings: None 
+  }
+  manifest_path: None
+  release: true
+  ignore_rust_version: false
+  unit_graph: false
+  packages: ["lambda-get"]
+  workspace: false
+  exclude: []
+  all: false
+  lib: false
+  bin: []
+  bins: false
+  example: []
+  examples: false
+  test: []
+  tests: false
+  bench: []
+  benches: false
+  all_targets: false
+  artifact_dir: None
+  build_plan: false
+  future_incompat_report: false 
+} 
+
+target_arch=TargetArch { 
+  rustc_target: "x86_64-unknown-linux-gnu" 
+} 
+_cargo_metadata=Metadata { 
+   packages: [
+     Package { 
+       name: "lambda-get"
+       version: Version { major: 0
+       minor: 1
+       patch: 0 }
+       authors: []
+       id: PackageId { repr: "path+file:///home/cris/dev/historical-septa/lambda-get#0.1.0" }
+       source: None
+       description: None
+       dependencies: [
+       license: None
+       license_file: None
+       targets: [Target { name: "lambda-get"
+       kind: ["bin"]
+       crate_types: ["bin"]
+       required_features: []
+       src_path: "/home/cris/dev/historical-septa/lambda-get/src/main.rs"
+       edition: _E2024
+       doctest: false
+       test: true
+       doc: true }]
+       features: {}
+       manifest_path: "/home/cris/dev/historical-septa/lambda-get/Cargo.toml"
+       categories: []
+       keywords: []
+       readme: None
+       repository: None
+       homepage: None
+       documentation: None
+       edition: _E2024
+       metadata: Null
+       links: None
+       publish: None
+       default_run: None
+       rust_version: None 
+     }
+   ]
+workspace_members: [
+  PackageId { repr: "path+file:///home/cris/dev/historical-septa/api#0.1.0" }
+  PackageId { repr: "path+file:///home/cris/dev/historical-septa#septa@0.1.0" }
+  PackageId { repr: "path+file:///home/cris/dev/historical-septa/fetcher#0.1.0" }
+  PackageId { repr: "path+file:///home/cris/dev/historical-septa/lambda-get#0.1.0" }
+  PackageId { repr: "path+file:///home/cris/dev/historical-septa/migrator#0.1.0" }
+  PackageId { repr: "path+file:///home/cris/dev/historical-septa/processor#0.1.0" }
+]
+resolve: None
+workspace_root: "/home/cris/dev/historical-septa"
+target_directory: "/home/cris/dev/historical-septa/target"
+workspace_metadata: Null
+version: 1 
+} 
+skip_target_check=false}: compiling with CargoZigbuild
